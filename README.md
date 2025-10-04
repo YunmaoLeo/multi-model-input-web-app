@@ -66,6 +66,16 @@ npm run preview
 pnpm preview
 ```
 
+### Deploy to GitHub Pages
+
+```bash
+npm run deploy
+# or
+pnpm deploy
+```
+
+The app will be deployed to: `https://yunmaoleo.github.io/multi-model-input-web-app/`
+
 ## Usage
 
 1. **Start Camera**: Click "Start Camera" to enable webcam access
