@@ -1,40 +1,49 @@
-import { useState, useEffect } from 'react'
-import type { ModelType, Calibration } from '@/types/pose'
+import type { ModelType, CameraStatus, InferenceStatus, FPSInfo } from '@/types/pose'
 
 interface ControlPanelProps {
   onStart: () => void
   onStop: () => void
   onModelChange: (model: ModelType) => void
-  onCalibrationChange: (calibration: Calibration) => void
   onScoreThresholdChange: (threshold: number) => void
   isRunning: boolean
   currentModel: ModelType
-  calibration: Calibration
   scoreThreshold: number
+  // Status info
+  cameraStatus: CameraStatus
+  inferenceStatus: InferenceStatus
+  fps: FPSInfo
+  keypointCount: number
+  tfBackend: string
+  inferenceTime: number
 }
 
 export default function ControlPanel({
   onStart,
   onStop,
   onModelChange,
-  onCalibrationChange,
   onScoreThresholdChange,
   isRunning,
   currentModel,
-  calibration,
-  scoreThreshold
+  scoreThreshold,
+  cameraStatus,
+  inferenceStatus,
+  fps,
+  keypointCount,
+  tfBackend,
+  inferenceTime
 }: ControlPanelProps) {
-  const [localCalibration, setLocalCalibration] = useState<Calibration>(calibration)
-
-  useEffect(() => {
-    onCalibrationChange(localCalibration)
-  }, [localCalibration, onCalibrationChange])
-
-  const handleCalibrationChange = (field: keyof Calibration, value: number) => {
-    setLocalCalibration(prev => ({
-      ...prev,
-      [field]: value
-    }))
+  
+  const getStatusColor = (status: CameraStatus | InferenceStatus): string => {
+    const colorMap = {
+      idle: '#999',
+      requesting: '#ffa500',
+      capturing: '#00A651',
+      paused: '#ffff00',
+      error: '#ff0000',
+      stopped: '#999',
+      running: '#00A651'
+    }
+    return colorMap[status] || '#999'
   }
 
   return (
@@ -69,56 +78,7 @@ export default function ControlPanel({
         </select>
       </div>
 
-      {/* 后端选择 */}
-      <div className="control-group">
-        <label>
-          Backend
-        </label>
-        <select disabled className="styled-select">
-          <option value="none">None (Local)</option>
-        </select>
-      </div>
-
-      {/* 校准参数 */}
-      <div className="control-group calibration-group">
-        <h4>
-          Calibration Parameters
-        </h4>
-        <div className="calibration-inputs">
-          <div className="input-group">
-            <label>Distance (m)</label>
-            <input
-              type="number"
-              step="0.1"
-              value={localCalibration.distance}
-              onChange={(e) => handleCalibrationChange('distance', parseFloat(e.target.value) || 0)}
-              className="styled-input"
-            />
-          </div>
-          <div className="input-group">
-            <label>Azimuth (°)</label>
-            <input
-              type="number"
-              step="1"
-              value={localCalibration.azimuth}
-              onChange={(e) => handleCalibrationChange('azimuth', parseFloat(e.target.value) || 0)}
-              className="styled-input"
-            />
-          </div>
-          <div className="input-group">
-            <label>Elevation (°)</label>
-            <input
-              type="number"
-              step="1"
-              value={localCalibration.elevation}
-              onChange={(e) => handleCalibrationChange('elevation', parseFloat(e.target.value) || 0)}
-              className="styled-input"
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* 置信度阈值 */}
+      {/* Confidence Threshold */}
       <div className="control-group">
         <label className="threshold-label">
           Confidence Threshold
@@ -133,6 +93,88 @@ export default function ControlPanel({
           onChange={(e) => onScoreThresholdChange(parseFloat(e.target.value))}
           className="styled-range"
         />
+      </div>
+
+      {/* Status Monitor */}
+      <div className="status-monitor">
+        <h4 style={{ 
+          fontSize: '0.9rem', 
+          color: '#555', 
+          marginBottom: '0.75rem',
+          paddingBottom: '0.5rem',
+          borderBottom: '1px solid #e0e0e0'
+        }}>
+          System Status
+        </h4>
+        
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', fontSize: '0.85rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ color: '#666' }}>Camera:</span>
+            <span style={{ 
+              color: getStatusColor(cameraStatus), 
+              fontWeight: 'bold',
+              textTransform: 'capitalize'
+            }}>
+              {cameraStatus}
+            </span>
+          </div>
+          
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ color: '#666' }}>Inference:</span>
+            <span style={{ 
+              color: getStatusColor(inferenceStatus), 
+              fontWeight: 'bold',
+              textTransform: 'capitalize'
+            }}>
+              {inferenceStatus}
+            </span>
+          </div>
+          
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ color: '#666' }}>FPS:</span>
+            <span style={{ 
+              color: fps.infer > 20 ? '#00A651' : '#ffa500', 
+              fontWeight: 'bold',
+              fontFamily: 'monospace'
+            }}>
+              {fps.infer} / {fps.render}
+            </span>
+          </div>
+          
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ color: '#666' }}>Backend:</span>
+            <span style={{ 
+              color: '#4facfe', 
+              fontWeight: 'bold',
+              fontFamily: 'monospace',
+              fontSize: '0.8rem'
+            }}>
+              {tfBackend}
+            </span>
+          </div>
+          
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ color: '#666' }}>Keypoints:</span>
+            <span style={{ 
+              color: '#00693E', 
+              fontWeight: 'bold',
+              fontFamily: 'monospace'
+            }}>
+              {keypointCount}
+            </span>
+          </div>
+          
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ color: '#666' }}>Latency:</span>
+            <span style={{ 
+              color: inferenceTime < 50 ? '#00A651' : '#ffa500', 
+              fontWeight: 'bold',
+              fontFamily: 'monospace'
+            }}>
+              {inferenceTime.toFixed(1)}ms
+            </span>
+          </div>
+        </div>
       </div>
     </div>
   )

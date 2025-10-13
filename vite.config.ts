@@ -4,7 +4,7 @@ import { resolve } from 'path'
 
 export default defineConfig({
   plugins: [react()],
-  base: '/multi-model-input-web-app/',
+  base: process.env.NODE_ENV === 'production' ? '/multi-model-input-web-app/' : '/',
   resolve: {
     alias: {
       '@': resolve(__dirname, './src')
@@ -12,6 +12,7 @@ export default defineConfig({
   },
   server: {
     port: 5173,
-    host: true
+    host: 'localhost',
+    strictPort: false
   }
 })

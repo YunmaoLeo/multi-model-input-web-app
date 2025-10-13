@@ -50,3 +50,24 @@ export type MicrophoneStatus = 'idle' | 'requesting' | 'recording' | 'paused' | 
 
 // 推理状态
 export type InferenceStatus = 'stopped' | 'running' | 'paused'
+
+// 手势相关类型
+export type GestureEvent = 'hit_left' | 'hit_right' | 'hit_both' | null
+
+// 手势可视化数据
+export interface GestureVisualization {
+  leftVelocity: { x: number; y: number }
+  rightVelocity: { x: number; y: number }
+  leftPosition: { x: number; y: number } | null
+  rightPosition: { x: number; y: number } | null
+  leftFlash: number  // 闪烁强度 [0, 1]
+  rightFlash: number // 闪烁强度 [0, 1]
+}
+
+// 击打统计
+export interface HitStats {
+  left: number
+  right: number
+  both: number
+  total: number
+}

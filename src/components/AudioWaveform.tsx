@@ -159,7 +159,7 @@ export default function AudioWaveform({ onStatusChange, onError }: AudioWaveform
 
       // Create analyser
       const analyser = audioContext.createAnalyser()
-      analyser.fftSize = 2048
+      analyser.fftSize = 2048 * 4
       analyserRef.current = analyser
 
       // Connect audio stream

@@ -113,10 +113,10 @@ body {
 .app-main {
   flex: 1;
   display: grid;
-  grid-template-columns: 1fr 380px;
-  gap: 1.5rem;
-  padding: 1.5rem;
-  max-width: 1600px;
+  grid-template-columns: 1fr 320px;
+  gap: 1rem;
+  padding: 1rem;
+  max-width: 100%;
   margin: 0 auto;
   width: 100%;
   overflow: hidden;
@@ -124,36 +124,34 @@ body {
 }
 
 .app-footer {
-  background: var(--dark-bg);
-  color: white;
-  padding: 0.75rem 1.5rem;
-  backdrop-filter: blur(10px);
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
-  flex-shrink: 0;
+  display: none; /* Footer removed, status integrated into control panel */
 }
 
 /* Video section */
 .video-section {
   position: relative;
-  overflow: auto;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: stretch;
   justify-content: center;
-  gap: 1rem;
   min-height: 0;
+  height: 100%;
 }
 
 .video-container {
   position: relative;
   background: transparent;
-  border-radius: 16px;
+  border-radius: 12px;
   overflow: hidden;
   box-shadow: none;
   border: 2px solid transparent;
   transition: all 0.4s ease;
   width: 100%;
-  max-height: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .video-container-active {
@@ -170,7 +168,8 @@ body {
 .camera-feed {
   position: relative;
   width: 100%;
-  min-height: 300px;
+  height: 100%;
+  min-height: 400px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -186,7 +185,8 @@ body {
 .camera-video {
   display: block;
   width: 100%;
-  height: auto;
+  height: 100%;
+  object-fit: cover;
 }
 
 .camera-placeholder {
@@ -434,11 +434,11 @@ body {
   border: 2px solid #ff6b6b;
 }
 
-/* 控制面板 */
+/* Control Panel */
 .control-section {
   background: var(--card-bg);
-  border-radius: 16px;
-  padding: 1.5rem;
+  border-radius: 12px;
+  padding: 1.25rem;
   box-shadow: var(--shadow-lg);
   backdrop-filter: blur(10px);
   border: 1px solid rgba(255, 255, 255, 0.2);
@@ -446,26 +446,35 @@ body {
   overflow-x: hidden;
   min-height: 0;
   max-height: 100%;
+  display: flex;
+  flex-direction: column;
 }
 
 .control-panel h3 {
-  margin-bottom: 1.5rem;
+  margin-bottom: 1.25rem;
   color: #2c3e50;
-  font-size: 1.4rem;
+  font-size: 1.25rem;
   font-weight: 700;
-  padding-bottom: 0.75rem;
+  padding-bottom: 0.65rem;
   border-bottom: 2px solid #ecf0f1;
 }
 
 .control-group {
-  margin-bottom: 1.5rem;
-  padding-bottom: 1.5rem;
+  margin-bottom: 1.25rem;
+  padding-bottom: 1.25rem;
   border-bottom: 1px solid #ecf0f1;
 }
 
 .control-group:last-child {
   border-bottom: none;
   margin-bottom: 0;
+}
+
+/* Status Monitor in Control Panel */
+.status-monitor {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 2px solid #e0e0e0;
 }
 
 .control-group label,

@@ -76,6 +76,7 @@ export default function CameraFeed({ onVideoReady, onError, onStatusChange }: Ca
           width: '100%',
           height: 'auto',
           transform: 'scaleX(-1)', // Mirror display
+          filter: 'blur(8px)', // 高斯模糊，保护隐私
           borderRadius: '8px',
           display: status === 'capturing' ? 'block' : 'none'
         }}
