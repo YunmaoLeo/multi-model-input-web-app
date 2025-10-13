@@ -90,7 +90,7 @@ export function filterByConfidence(
 export function processKeypoints(
   keypoints: Keypoint[],
   smoother: EMASmoother,
-  threshold: number = 0.3
+  _threshold: number = 0.3
 ): Keypoint[] {
   // Just smooth, don't filter! 
   // We need all keypoints for gesture detection even if confidence is low
