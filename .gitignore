@@ -44,6 +44,7 @@ public/scripts/utils/__pycache__/
 *.pyc
 *.pyo
 *.pyd
+.venv/
 
 # Generated audio analysis files
 public/audio/songs/*/drum_analysis.json

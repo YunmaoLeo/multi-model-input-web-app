@@ -191,6 +191,12 @@ export class RhythmGameEngine {
     this.visibleNotes = this.visibleNotes.map(note => {
       // Calculate falling progress
       const timeUntilHit = note.time - this.currentTime
+      
+      // Progress calculation:
+      // - progress = 0: note appears at top (2 seconds before hit)
+      // - progress = 1: note reaches judge line (at hit time)
+      // Judge line is at 55% of track height, so we need to map progress accordingly
+      // When progress = 1, note should be at 55% position (judge line)
       const progress = 1 - (timeUntilHit / this.lookaheadTime)
       
       return {

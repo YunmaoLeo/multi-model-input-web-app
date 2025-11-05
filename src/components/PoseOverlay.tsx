@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import { useRef, useEffect } from 'react'
 import type { Keypoint } from '@/types/pose'
 
@@ -67,127 +68,15 @@ export default function PoseOverlay({ videoElement, keypoints, isVisible, drumHi
     let isDrawing = true
 
     /**
-     * 绘制虚拟鼓 - 重新设计为更扁平的鼓面
+     * 绘制姿态
      */
-    const drawDrums = (ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement) => {
-      const drumWidth = Math.min(canvas.width, canvas.height) * 0.18
-      const drumHeight = drumWidth * 0.7  // 更扁平的椭圆形
-      const drumY = canvas.height * 0.78
-      const leftDrumX = canvas.width * 0.3
-      const rightDrumX = canvas.width * 0.7
-      
-      // 因为 canvas 是镜像的，所以需要交换 left 和 right 的映射
-      const leftIntensity = drumHits?.left || 0
-      const rightIntensity = drumHits?.right || 0
-      
-      // Draw left drum (on screen right side after mirror)
-      drawDrumPad(ctx, rightDrumX, drumY, drumWidth, drumHeight, leftIntensity, 'left')
-      
-      // Draw right drum (on screen left side after mirror)
-      drawDrumPad(ctx, leftDrumX, drumY, drumWidth, drumHeight, rightIntensity, 'right')
-    }
-    
-    /**
-     * 绘制鼓垫（扁平椭圆形）
-     */
-    const drawDrumPad = (
-      ctx: CanvasRenderingContext2D,
-      x: number,
-      y: number,
-      width: number,
-      height: number,
-      intensity: number,
-      side: 'left' | 'right'
-    ) => {
-      // 击打时的缩放效果（轻微）
-      const scale = 1 + intensity * 0.1
-      const currentWidth = width * scale
-      const currentHeight = height * scale
-      
-      ctx.save()
-      ctx.translate(x, y)
-      
-      // 外发光效果
-      if (intensity > 0) {
-        const glowSize = 40 * intensity
-        ctx.shadowColor = '#00FF88'
-        ctx.shadowBlur = glowSize
-        ctx.shadowOffsetX = 0
-        ctx.shadowOffsetY = 0
-      }
-      
-      // 绘制鼓垫主体（椭圆形）
-      ctx.beginPath()
-      ctx.ellipse(0, 0, currentWidth / 2, currentHeight / 2, 0, 0, 2 * Math.PI)
-      
-      // 渐变填充 - 3D 效果
-      const gradient = ctx.createRadialGradient(
-        -currentWidth * 0.15,
-        -currentHeight * 0.15,
-        0,
-        0,
-        0,
-        currentWidth / 2
-      )
-      
-      if (intensity > 0.3) {
-        gradient.addColorStop(0, '#00FF88')
-        gradient.addColorStop(0.3, '#00C46A')
-        gradient.addColorStop(1, '#00693E')
-      } else {
-        gradient.addColorStop(0, '#00A651')
-        gradient.addColorStop(0.5, '#00853f')
-        gradient.addColorStop(1, '#00693E')
-      }
-      
-      ctx.fillStyle = gradient
-      ctx.fill()
-      
-      // 重置阴影
-      ctx.shadowBlur = 0
-      
-      // 鼓垫边框
-      ctx.strokeStyle = intensity > 0.3 ? '#00FF88' : '#00A651'
-      ctx.lineWidth = 4 + intensity * 3
-      ctx.stroke()
-      
-      // 内圈装饰线
-      ctx.beginPath()
-      ctx.ellipse(0, 0, currentWidth / 2 * 0.85, currentHeight / 2 * 0.85, 0, 0, 2 * Math.PI)
-      ctx.strokeStyle = `rgba(255, 255, 255, ${0.2 + intensity * 0.3})`
-      ctx.lineWidth = 2
-      ctx.stroke()
-      
-      // 中心十字标记（更专业的打击垫样式）
-      ctx.strokeStyle = `rgba(255, 255, 255, ${0.3 + intensity * 0.4})`
-      ctx.lineWidth = 2
-      ctx.beginPath()
-      ctx.moveTo(-currentWidth * 0.15, 0)
-      ctx.lineTo(currentWidth * 0.15, 0)
-      ctx.moveTo(0, -currentHeight * 0.15)
-      ctx.lineTo(0, currentHeight * 0.15)
-      ctx.stroke()
-      
-      // 标签（反向镜像）
-      ctx.scale(-1, 1)
-      ctx.fillStyle = intensity > 0.3 ? '#00FF88' : '#FFFFFF'
-      ctx.font = `bold ${width * 0.18}px Arial`
-      ctx.textAlign = 'center'
-      ctx.textBaseline = 'middle'
-      ctx.shadowColor = 'rgba(0, 0, 0, 0.5)'
-      ctx.shadowBlur = 4
-      ctx.fillText(side === 'left' ? 'L' : 'R', 0, 0)
-      
-      ctx.restore()
-    }
-
     const drawPose = () => {
       if (!isDrawing) return
       // 清空画布
       ctx.clearRect(0, 0, canvas.width, canvas.height)
       
-      // Draw drums first (background layer)
-      drawDrums(ctx, canvas)
+      // 不再绘制旧的L/R鼓垫（绿色按钮）
+      // （鼓UI由 DrumPadDisplay 渲染）
 
       if (keypoints.length === 0) {
         animationFrameRef.current = requestAnimationFrame(drawPose)
@@ -209,28 +98,12 @@ export default function PoseOverlay({ videoElement, keypoints, isVisible, drumHi
           const y1 = startPoint.y * canvas.height
           const x2 = endPoint.x * canvas.width
           const y2 = endPoint.y * canvas.height
-
-          // 创建渐变线条
-          const gradient = ctx.createLinearGradient(x1, y1, x2, y2)
-          gradient.addColorStop(0, '#00A651')
-          gradient.addColorStop(1, '#00693E')
-
-          // 绘制外层阴影（更粗，半透明）
-          ctx.strokeStyle = 'rgba(0, 105, 62, 0.3)'
-          ctx.lineWidth = 6
-          ctx.lineCap = 'round'
-          ctx.beginPath()
-          ctx.moveTo(x1, y1)
-          ctx.lineTo(x2, y2)
-          ctx.stroke()
-
-          // 绘制主线条
-          ctx.strokeStyle = gradient
+          
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)'
           ctx.lineWidth = 3
-          ctx.lineCap = 'round'
           ctx.beginPath()
-          ctx.moveTo(x1, y1)
-          ctx.lineTo(x2, y2)
+          ctx.moveTo(canvas.width - x1, y1)
+          ctx.lineTo(canvas.width - x2, y2)
           ctx.stroke()
         }
       })

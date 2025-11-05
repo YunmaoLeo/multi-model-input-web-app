@@ -78,15 +78,7 @@ export default function NoteTrack({
     
     ctx.setLineDash([])
     
-    // Draw track labels
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.6)'
-    ctx.font = '12px Arial'
-    ctx.textAlign = 'center'
-    ctx.fillText('Left', leftX / 2, 30)
-    ctx.fillText('Both', trackWidth / 2, 30)
-    ctx.fillText('Right', (rightX + trackWidth) / 2, 30)
-    
-    // Draw notes
+    // Draw notes (track labels removed)
     visibleNotes.forEach(note => {
       // Calculate note position
       let noteX: number
@@ -98,7 +90,11 @@ export default function NoteTrack({
         noteX = trackWidth / 2
       }
       
-      const noteY = judgeLineY - (judgeLineY * (1 - note.progress))
+      // Calculate note Y position
+      // When progress = 0: note at top (y = 0)
+      // When progress = 1: note at judge line (y = judgeLineY)
+      // Judge line is at 55% of track height
+      const noteY = judgeLineY * note.progress
       
       const color = colors[note.type]
       

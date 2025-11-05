@@ -429,6 +429,34 @@ export class GestureDetector {
   public getConfig(): GestureConfig {
     return { ...this.config }
   }
+
+  /**
+   * Get right hand position (normalized screen coordinates)
+   */
+  public getRightHandPosition(): { x: number; y: number; hasPosition: boolean } {
+    if (!this.rightHand.position) {
+      return { x: 0, y: 0, hasPosition: false }
+    }
+    return {
+      x: this.rightHand.position.x,
+      y: this.rightHand.position.y,
+      hasPosition: true
+    }
+  }
+
+  /**
+   * Get left hand position (normalized screen coordinates)
+   */
+  public getLeftHandPosition(): { x: number; y: number; hasPosition: boolean } {
+    if (!this.leftHand.position) {
+      return { x: 0, y: 0, hasPosition: false }
+    }
+    return {
+      x: this.leftHand.position.x,
+      y: this.leftHand.position.y,
+      hasPosition: true
+    }
+  }
 }
 
 

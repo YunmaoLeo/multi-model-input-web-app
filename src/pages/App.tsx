@@ -23,6 +23,12 @@ import JudgeFeedback from '@/components/rhythm/JudgeFeedback'
 import SongSelector from '@/components/rhythm/SongSelector'
 import type { SongConfig, JudgeInfo, GameStats, VisibleNote } from '@/types/rhythm'
 
+// New drum system imports (simplified for testing)
+import { SimpleDrumPlayer } from '@/lib/drums/SimpleDrumPlayer'
+import DrumPadDisplay from '@/components/drums/DrumPadDisplay'
+import HandPositionDebug from '@/components/drums/HandPositionDebug'
+import type { DrumPad } from '@/types/drum'
+
 export default function App() {
   // State management
   const [cameraStatus, setCameraStatus] = useState<CameraStatus>('idle')
@@ -36,6 +42,17 @@ export default function App() {
   
   // Gesture and audio state
   const [drumHits, setDrumHits] = useState<{ left: number; right: number }>({ left: 0, right: 0 })
+  
+  // Game mode selection
+  const [gameMode, setGameMode] = useState<'rhythm' | 'drum'>('drum')  // Default to drum mode for testing
+  
+  // Simple drum test state
+  const [drumPads, setDrumPads] = useState<DrumPad[]>([])
+  const [currentHitDrumId, setCurrentHitDrumId] = useState<string | null>(null)
+  const [showHandDebug, setShowHandDebug] = useState(true)  // Enable debug by default
+  const [mirrorX, setMirrorX] = useState(true)  // Mirror X coordinate (default true for front camera)
+  const [leftHandDebugPos, setLeftHandDebugPos] = useState<{ x: number; y: number } | null>(null)
+  const [rightHandDebugPos, setRightHandDebugPos] = useState<{ x: number; y: number } | null>(null)
   
   // Rhythm game state
   const [showSongSelector, setShowSongSelector] = useState(false)
@@ -55,6 +72,7 @@ export default function App() {
   const [currentJudge, setCurrentJudge] = useState<JudgeInfo | null>(null)
   const [gameCurrentTime, setGameCurrentTime] = useState(0)
   const [gameDuration, setGameDuration] = useState(0)
+  
 
   // Refs
   const videoRef = useRef<HTMLVideoElement | null>(null)
@@ -71,6 +89,10 @@ export default function App() {
   // Rhythm game refs
   const rhythmEngineRef = useRef<RhythmGameEngine | null>(null)
   const chartLoaderRef = useRef<ChartLoader>(new ChartLoader())
+  
+  // Simple drum player ref
+  const simpleDrumPlayerRef = useRef<SimpleDrumPlayer | null>(null)
+  const hitDrumFlashRef = useRef<string | null>(null)
   
   // Available songs
   const availableSongs: SongConfig[] = [
@@ -142,6 +164,30 @@ export default function App() {
       console.error('❌ Audio initialization failed:', error)
     }
   }, [])
+
+  // Initialize simple drum player
+  const initializeDrumPlayer = useCallback(async () => {
+    if (!audioManagerRef.current?.isInitialized) {
+      await initializeAudio()
+    }
+
+    const audioContext = (audioManagerRef.current as any).context
+    if (!audioContext) {
+      throw new Error('AudioContext not available')
+    }
+
+    if (!simpleDrumPlayerRef.current) {
+      simpleDrumPlayerRef.current = new SimpleDrumPlayer(audioContext, mirrorX)
+      await simpleDrumPlayerRef.current.loadSamples()
+      
+      const pads = simpleDrumPlayerRef.current.getAllPads()
+      setDrumPads(pads)
+      console.log('✅ Simple drum player initialized with', pads.length, 'drums')
+    } else {
+      // Update mirror setting if changed
+      simpleDrumPlayerRef.current.setMirrorX(mirrorX)
+    }
+  }, [initializeAudio, mirrorX])
   
   // Load and start rhythm game
   const startRhythmGame = useCallback(async () => {
@@ -339,6 +385,120 @@ export default function App() {
     }
   }, [selectedSong, selectedDifficulty, scoreThreshold])
 
+  // Drum mode inference loop
+  const runDrumInference = useCallback(() => {
+    const loop = async () => {
+      if (!videoRef.current || !detectorRef.current || !isInferringRef.current) {
+        console.warn('⚠️ Drum inference loop condition failed')
+        return
+      }
+
+      try {
+        const currentTime = performance.now()
+        
+        // Pose inference
+        const inferStart = performance.now()
+        const rawKeypoints = await detectorRef.current.estimatePoses(videoRef.current)
+        const inferEnd = performance.now()
+        const inferTime = inferEnd - inferStart
+        
+        setInferenceTime(inferTime)
+        
+        // Apply smoothing
+        const smoothedKeypoints = processKeypoints(
+          rawKeypoints,
+          smootherRef.current!,
+          scoreThreshold
+        )
+        
+        setKeypoints(smoothedKeypoints)
+
+        // Gesture detection
+        if (gestureDetectorRef.current && simpleDrumPlayerRef.current) {
+          const gestureResult = gestureDetectorRef.current.detect(smoothedKeypoints, currentTime)
+          
+          // Get hand positions
+          const leftHandPos = gestureDetectorRef.current.getLeftHandPosition()
+          const rightHandPos = gestureDetectorRef.current.getRightHandPosition()
+          
+          const leftPos = leftHandPos.hasPosition ? { x: leftHandPos.x, y: leftHandPos.y } : null
+          const rightPos = rightHandPos.hasPosition ? { x: rightHandPos.x, y: rightHandPos.y } : null
+          
+          // Update debug positions
+          setLeftHandDebugPos(leftPos)
+          setRightHandDebugPos(rightPos)
+          
+          // Process hit
+          if (gestureResult.event && videoRef.current) {
+            const screenWidth = videoRef.current.videoWidth || 640
+            const screenHeight = videoRef.current.videoHeight || 480
+            
+            // Debug: Log hand positions occasionally
+            if (Math.random() < 0.05) {
+              console.log('🔍 Hand positions:', {
+                left: leftPos ? `(${leftPos.x.toFixed(2)}, ${leftPos.y.toFixed(2)})` : 'null',
+                right: rightPos ? `(${rightPos.x.toFixed(2)}, ${rightPos.y.toFixed(2)})` : 'null',
+                screenSize: `${screenWidth}x${screenHeight}`
+              })
+            }
+            
+            const hitDrum = simpleDrumPlayerRef.current.processHit(
+              gestureResult.event,
+              leftPos,
+              rightPos,
+              currentTime,
+              screenWidth,
+              screenHeight
+            )
+            
+            if (hitDrum) {
+              // Flash effect
+              setCurrentHitDrumId(hitDrum.id)
+              hitDrumFlashRef.current = hitDrum.id
+              setTimeout(() => {
+                if (hitDrumFlashRef.current === hitDrum.id) {
+                  setCurrentHitDrumId(null)
+                  hitDrumFlashRef.current = null
+                }
+              }, 200)
+              
+              // Update drum hits for visual feedback
+              if (gestureResult.event === 'hit_left' || gestureResult.event === 'hit_both') {
+                drumFlashRef.current.left = 1.0
+              }
+              if (gestureResult.event === 'hit_right' || gestureResult.event === 'hit_both') {
+                drumFlashRef.current.right = 1.0
+              }
+            }
+          }
+          
+          // Update drum flash decay
+          drumFlashRef.current.left = Math.max(0, drumFlashRef.current.left - 0.06)
+          drumFlashRef.current.right = Math.max(0, drumFlashRef.current.right - 0.06)
+          
+          setDrumHits({
+            left: drumFlashRef.current.left,
+            right: drumFlashRef.current.right
+          })
+        }
+
+        // Update FPS
+        const inferFps = inferFpsRef.current.update(currentTime)
+        const renderFps = renderFpsRef.current.update(currentTime)
+        setFps({ infer: inferFps, render: renderFps })
+
+        // Continue to next frame
+        animationFrameRef.current = requestAnimationFrame(loop)
+      } catch (error) {
+        console.error('Drum inference error:', error)
+        setInferenceStatus('stopped')
+        isInferringRef.current = false
+      }
+    }
+    
+    loop()
+  }, [scoreThreshold])
+
   // Handle video ready
   const handleVideoReady = useCallback((video: HTMLVideoElement) => {
     videoRef.current = video
@@ -354,27 +514,50 @@ export default function App() {
     setCameraStatus(status)
   }, [])
 
-  // Start inference (rhythm game mode only)
+  // Start inference
   const handleStart = useCallback(async () => {
-    console.log('🚀 handleStart called')
+    console.log('🚀 handleStart called', { gameMode })
     
     if (!videoRef.current || !detectorRef.current) {
       console.warn('Cannot start: video or detector not ready')
       return
     }
 
-    // Initialize audio
-    await initializeAudio()
+    if (gameMode === 'drum') {
+      // Drum mode: initialize drum player and start inference
+      try {
+        await initializeDrumPlayer()
+        setInferenceStatus('running')
+        isInferringRef.current = true
+        inferFpsRef.current.reset()
+        renderFpsRef.current.reset()
+        
+        // Reset gesture detector
+        if (gestureDetectorRef.current) {
+          gestureDetectorRef.current.reset()
+        }
+        
+        console.log('🥁 Starting drum mode inference...')
+        runDrumInference()
+      } catch (error) {
+        console.error('❌ Failed to start drum mode:', error)
+        alert('Failed to initialize drum player. Please check console for details.')
+      }
+    } else {
+      // Rhythm game mode
+      // Initialize audio
+      await initializeAudio()
 
-    // Show song selector if no song is selected
-    if (!selectedSong) {
-      setShowSongSelector(true)
-      return
+      // Show song selector if no song is selected
+      if (!selectedSong) {
+        setShowSongSelector(true)
+        return
+      }
+
+      // If song is selected, start the rhythm game
+      await startRhythmGame()
     }
-
-    // If song is selected, start the rhythm game
-    await startRhythmGame()
-  }, [initializeAudio, selectedSong, startRhythmGame])
+  }, [gameMode, initializeAudio, initializeDrumPlayer, runDrumInference, selectedSong, startRhythmGame])
 
   // Stop inference
   const handleStop = useCallback(() => {
@@ -392,6 +575,13 @@ export default function App() {
       rhythmEngineRef.current.dispose()
       rhythmEngineRef.current = null
       console.log('Rhythm game stopped')
+    }
+    
+    // Reset drum player
+    if (simpleDrumPlayerRef.current) {
+      simpleDrumPlayerRef.current.reset()
+      setCurrentHitDrumId(null)
+      hitDrumFlashRef.current = null
     }
   }, [])
 
@@ -411,12 +601,12 @@ export default function App() {
     initializeDetector(currentModel)
   }, [initializeDetector, currentModel])
   
-  // Auto show song selector when camera is ready
+  // Auto show song selector when camera is ready (rhythm mode only)
   useEffect(() => {
-    if (cameraStatus === 'capturing' && !selectedSong && !showSongSelector && inferenceStatus === 'stopped') {
+    if (gameMode === 'rhythm' && cameraStatus === 'capturing' && !selectedSong && !showSongSelector && inferenceStatus === 'stopped') {
       setShowSongSelector(true)
     }
-  }, [cameraStatus, selectedSong, showSongSelector, inferenceStatus])
+  }, [gameMode, cameraStatus, selectedSong, showSongSelector, inferenceStatus])
   
   // Cleanup on unmount
   useEffect(() => {
@@ -463,8 +653,8 @@ export default function App() {
               drumHits={drumHits}
             />
             
-            {/* Note Track */}
-            {inferenceStatus === 'running' && videoRef.current && (
+            {/* Note Track (Rhythm Mode) */}
+            {gameMode === 'rhythm' && inferenceStatus === 'running' && videoRef.current && (
               <NoteTrack
                 visibleNotes={visibleNotes}
                 videoWidth={videoRef.current.videoWidth || 640}
@@ -472,8 +662,78 @@ export default function App() {
               />
             )}
             
-            {/* Drum Mode Indicator */}
+            {/* Drum Pad Display (Drum Mode) */}
+            {gameMode === 'drum' && inferenceStatus === 'running' && videoRef.current && drumPads.length > 0 && (
+              <>
+                <DrumPadDisplay
+                  pads={drumPads}
+                  videoWidth={videoRef.current.videoWidth || 640}
+                  videoHeight={videoRef.current.videoHeight || 480}
+                  hitDrumId={currentHitDrumId}
+                />
+                {/* Hand Position Debug */}
+                {showHandDebug && (
+                  <HandPositionDebug
+                    leftHandPos={leftHandDebugPos}
+                    rightHandPos={rightHandDebugPos}
+                    videoWidth={videoRef.current.videoWidth || 640}
+                    videoHeight={videoRef.current.videoHeight || 480}
+                    enabled={showHandDebug}
+                    mirrorX={mirrorX}
+                  />
+                )}
+              </>
+            )}
+            
+            {/* Mode Indicator */}
             {cameraStatus === 'capturing' && inferenceStatus !== 'running' && (
+              <div style={{
+                position: 'absolute',
+                top: '20px',
+                left: '50%',
+                transform: 'translateX(-50%)',
+                display: 'flex',
+                gap: '12px',
+                alignItems: 'center',
+                zIndex: 100
+              }}>
+                <div style={{
+                  background: 'rgba(0, 0, 0, 0.85)',
+                  backdropFilter: 'blur(10px)',
+                  padding: '12px 24px',
+                  borderRadius: '30px',
+                  color: 'white',
+                  fontSize: '16px',
+                  fontWeight: 'bold',
+                  boxShadow: '0 4px 20px rgba(0, 0, 0, 0.4)',
+                  border: gameMode === 'drum' 
+                    ? '2px solid rgba(79, 172, 254, 0.5)' 
+                    : '2px solid rgba(255, 107, 157, 0.5)'
+                }}>
+                  {gameMode === 'drum' ? '🥁 Drum Mode' : '🎵 Rhythm Mode'}
+                </div>
+                
+                {/* Mode Toggle Button */}
+                <button
+                  onClick={() => setGameMode(gameMode === 'drum' ? 'rhythm' : 'drum')}
+                  style={{
+                    padding: '8px 16px',
+                    borderRadius: '20px',
+                    border: '2px solid rgba(255,255,255,0.3)',
+                    background: 'rgba(255,255,255,0.1)',
+                    color: 'white',
+                    fontSize: '12px',
+                    cursor: 'pointer',
+                    transition: 'all 0.3s ease'
+                  }}
+                >
+                  Switch Mode
+                </button>
+              </div>
+            )}
+            
+            {/* Old Mode Indicator (removed) */}
+            {false && cameraStatus === 'capturing' && inferenceStatus !== 'running' && (
               <div style={{
                 position: 'absolute',
                 top: '20px',
@@ -494,8 +754,8 @@ export default function App() {
               </div>
             )}
             
-            {/* Song Selector */}
-            {showSongSelector && (
+            {/* Song Selector (Rhythm Mode Only) */}
+            {gameMode === 'rhythm' && showSongSelector && (
               <SongSelector
                 songs={availableSongs}
                 selectedSong={selectedSong}
@@ -511,8 +771,8 @@ export default function App() {
         </div>
 
         <div className="control-section">
-          {/* Select Song Button */}
-          {cameraStatus === 'capturing' && inferenceStatus !== 'running' && !showSongSelector && (
+          {/* Select Song Button (Rhythm Mode Only) */}
+          {gameMode === 'rhythm' && cameraStatus === 'capturing' && inferenceStatus !== 'running' && !showSongSelector && (
             <div style={{ marginBottom: '20px' }}>
               <button
                 onClick={() => setShowSongSelector(true)}
@@ -543,6 +803,69 @@ export default function App() {
             </div>
           )}
           
+          {/* Drum Mode Info */}
+          {gameMode === 'drum' && cameraStatus === 'capturing' && inferenceStatus !== 'running' && (
+            <div style={{ 
+              marginBottom: '20px',
+              padding: '16px',
+              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+              borderRadius: '12px',
+              color: 'white',
+              textAlign: 'center'
+            }}>
+              <div style={{ fontSize: '18px', fontWeight: 'bold', marginBottom: '8px' }}>
+                🥁 Drum Mode
+              </div>
+              <div style={{ fontSize: '14px', opacity: 0.9, marginBottom: '12px' }}>
+                Click "Start Inference" to begin playing drums!
+                <br />
+                Move your hands to different drum positions and hit down.
+              </div>
+              <div style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px',
+                fontSize: '12px'
+              }}>
+                <label style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  cursor: 'pointer'
+                }}>
+                  <input
+                    type="checkbox"
+                    checked={showHandDebug}
+                    onChange={(e) => setShowHandDebug(e.target.checked)}
+                    style={{ cursor: 'pointer' }}
+                  />
+                  Show hand position debug (red=L, blue=R)
+                </label>
+                <label style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  cursor: 'pointer'
+                }}>
+                  <input
+                    type="checkbox"
+                    checked={mirrorX}
+                    onChange={(e) => {
+                      setMirrorX(e.target.checked)
+                      if (simpleDrumPlayerRef.current) {
+                        simpleDrumPlayerRef.current.setMirrorX(e.target.checked)
+                      }
+                    }}
+                    style={{ cursor: 'pointer' }}
+                  />
+                  Mirror X coordinate (fix left/right swap)
+                </label>
+              </div>
+            </div>
+          )}
+          
           <ControlPanel
             onStart={handleStart}
             onStop={handleStop}
@@ -561,8 +884,8 @@ export default function App() {
         </div>
       </main>
       
-      {/* Progress Bar */}
-      {inferenceStatus === 'running' && selectedSong && (
+      {/* Progress Bar (Rhythm Mode Only) */}
+      {gameMode === 'rhythm' && inferenceStatus === 'running' && selectedSong && (
         <ProgressBar
           currentTime={gameCurrentTime}
           duration={gameDuration}
@@ -572,8 +895,8 @@ export default function App() {
         />
       )}
       
-      {/* Judgment Feedback */}
-      {currentJudge && currentJudge.result && (
+      {/* Judgment Feedback (Rhythm Mode Only) */}
+      {gameMode === 'rhythm' && currentJudge && currentJudge.result && (
         <JudgeFeedback
           result={currentJudge.result}
           timingError={currentJudge.timingError}
