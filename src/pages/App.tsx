@@ -9,13 +9,19 @@ import { GestureDetector } from '@/lib/gesture'
 import { AudioManager } from '@/lib/audio'
 import type { 
   Keypoint, 
-  Calibration, 
   ModelType, 
   CameraStatus,
-  InferenceStatus, 
-  FramePayload,
-  HitStats
+  InferenceStatus
 } from '@/types/pose'
+
+// Rhythm game imports
+import { RhythmGameEngine } from '@/lib/rhythm/RhythmGameEngine'
+import { ChartLoader } from '@/lib/rhythm/ChartLoader'
+import ProgressBar from '@/components/rhythm/ProgressBar'
+import NoteTrack from '@/components/rhythm/NoteTrack'
+import JudgeFeedback from '@/components/rhythm/JudgeFeedback'
+import SongSelector from '@/components/rhythm/SongSelector'
+import type { SongConfig, JudgeInfo, GameStats, VisibleNote } from '@/types/rhythm'
 
 export default function App() {
   // State management
@@ -28,10 +34,27 @@ export default function App() {
   const [tfBackend, setTfBackend] = useState<string>('loading...')
   const [inferenceTime, setInferenceTime] = useState<number>(0)
   
-  // 手势和音频相关状态
-  const [hitStats, setHitStats] = useState<HitStats>({ left: 0, right: 0, both: 0, total: 0 })
-  const [audioInitialized, setAudioInitialized] = useState(false)
+  // Gesture and audio state
   const [drumHits, setDrumHits] = useState<{ left: number; right: number }>({ left: 0, right: 0 })
+  
+  // Rhythm game state
+  const [showSongSelector, setShowSongSelector] = useState(false)
+  const [selectedSong, setSelectedSong] = useState<SongConfig | null>(null)
+  const [selectedDifficulty, setSelectedDifficulty] = useState<'easy' | 'normal' | 'hard'>('normal')
+  const [isLoadingSong, setIsLoadingSong] = useState(false)
+  const [rhythmGameStats, setRhythmGameStats] = useState<GameStats>({
+    perfect: 0,
+    good: 0,
+    miss: 0,
+    combo: 0,
+    maxCombo: 0,
+    score: 0,
+    accuracy: 1.0
+  })
+  const [visibleNotes, setVisibleNotes] = useState<VisibleNote[]>([])
+  const [currentJudge, setCurrentJudge] = useState<JudgeInfo | null>(null)
+  const [gameCurrentTime, setGameCurrentTime] = useState(0)
+  const [gameDuration, setGameDuration] = useState(0)
 
   // Refs
   const videoRef = useRef<HTMLVideoElement | null>(null)
@@ -44,6 +67,27 @@ export default function App() {
   const animationFrameRef = useRef<number | null>(null)
   const isInferringRef = useRef<boolean>(false)
   const drumFlashRef = useRef<{ left: number; right: number }>({ left: 0, right: 0 })
+  
+  // Rhythm game refs
+  const rhythmEngineRef = useRef<RhythmGameEngine | null>(null)
+  const chartLoaderRef = useRef<ChartLoader>(new ChartLoader())
+  
+  // Available songs
+  const availableSongs: SongConfig[] = [
+    {
+      id: 'test-demo',
+      name: 'Test Demo Drums',
+      artist: 'Alge',
+      audioPath: '/assets/soundtracks/test demo_drums - Alge.mp3',
+      bpm: 161.5,
+      duration: 102,
+      charts: {
+        easy: '/charts/test-demo-easy.json',
+        normal: '/charts/test-demo-normal.json',
+        hard: '/charts/test-demo-hard.json'
+      }
+    }
+  ]
 
   // Initialize detector
   const initializeDetector = useCallback(async (modelType: ModelType) => {
@@ -60,30 +104,28 @@ export default function App() {
     
     if (!smootherRef.current) {
       // Use alpha=0.7 for fast response with light smoothing
-      // 70% new value, 30% old value = responsive but stable
       smootherRef.current = new EMASmoother(0.7)
     }
     
-    // 初始化手势检测器
+    // Initialize gesture detector
     if (!gestureDetectorRef.current) {
       gestureDetectorRef.current = new GestureDetector()
     }
     
-    // 初始化音频管理器
+    // Initialize audio manager
     if (!audioManagerRef.current) {
       audioManagerRef.current = new AudioManager()
     }
   }, [])
   
-  // 初始化音频（需要用户交互）
+  // Initialize audio (requires user interaction)
   const initializeAudio = useCallback(async () => {
     console.log('🎵 initializeAudio called', {
       hasAudioManager: !!audioManagerRef.current
     })
     
-    // 使用 ref 检查状态，避免依赖 state
     if (audioManagerRef.current?.isInitialized) {
-      console.log('⏭️ Audio already initialized (checked via ref)')
+      console.log('⏭️ Audio already initialized')
       return
     }
     
@@ -95,14 +137,207 @@ export default function App() {
     try {
       console.log('🔄 Initializing audio...')
       await audioManagerRef.current.initialize()
-      setAudioInitialized(true)
-      console.log('✅ Audio system activated!', {
-        isInitialized: audioManagerRef.current.isInitialized
-      })
+      console.log('✅ Audio system activated!')
     } catch (error) {
       console.error('❌ Audio initialization failed:', error)
     }
-  }, []) // 移除 audioInitialized 依赖
+  }, [])
+  
+  // Load and start rhythm game
+  const startRhythmGame = useCallback(async () => {
+    if (!selectedSong) {
+      console.error('❌ Cannot start game: No song selected')
+      return
+    }
+    
+    setIsLoadingSong(true)
+    
+    try {
+      // Ensure audio system is initialized
+      if (!audioManagerRef.current) {
+        audioManagerRef.current = new AudioManager()
+      }
+      
+      if (!audioManagerRef.current.isInitialized) {
+        await audioManagerRef.current.initialize()
+      }
+      
+      // Get AudioContext
+      const audioContext = (audioManagerRef.current as any).context
+      if (!audioContext) {
+        throw new Error('AudioContext not available')
+      }
+      
+      console.log('🎮 Loading song...', {
+        song: selectedSong.name,
+        difficulty: selectedDifficulty
+      })
+      
+      // Load chart and audio
+      const { chart, audioBuffer } = await chartLoaderRef.current.loadSong(
+        audioContext,
+        selectedSong,
+        selectedDifficulty
+      )
+      
+      // Create game engine
+      if (rhythmEngineRef.current) {
+        rhythmEngineRef.current.dispose()
+      }
+      
+      rhythmEngineRef.current = new RhythmGameEngine(chart, audioBuffer, audioContext)
+      
+      // Set up callbacks
+      rhythmEngineRef.current.onJudge((judgeInfo) => {
+        setCurrentJudge(judgeInfo)
+        // Feedback auto-clears
+        setTimeout(() => setCurrentJudge(null), 800)
+      })
+      
+      rhythmEngineRef.current.onStatsUpdate((stats) => {
+        setRhythmGameStats(stats)
+      })
+      
+      rhythmEngineRef.current.onGameEnd((stats) => {
+        console.log('🏁 Game ended', stats)
+        setInferenceStatus('stopped')
+        isInferringRef.current = false
+        
+        // Show results
+        alert(`Game Over!\n\nScore: ${stats.score}\nPerfect: ${stats.perfect}\nGood: ${stats.good}\nMiss: ${stats.miss}\nMax Combo: ${stats.maxCombo}\nAccuracy: ${(stats.accuracy * 100).toFixed(1)}%`)
+      })
+      
+      setGameDuration(audioBuffer.duration)
+      setIsLoadingSong(false)
+      setShowSongSelector(false)
+      
+      console.log('✅ Game ready')
+      
+      // Check if camera and detector are ready before starting
+      if (!videoRef.current || !detectorRef.current) {
+        alert('Camera not ready. Please start camera first.')
+        setIsLoadingSong(false)
+        throw new Error('Camera not ready')
+      }
+      
+      // Start the game engine
+      rhythmEngineRef.current.start()
+      
+      // Set inference status
+      setInferenceStatus('running')
+      isInferringRef.current = true
+      inferFpsRef.current.reset()
+      renderFpsRef.current.reset()
+      
+      // Reset gesture detector
+      if (gestureDetectorRef.current) {
+        gestureDetectorRef.current.reset()
+      }
+      
+      console.log('🎬 Starting inference loop...')
+      
+      // Start inference loop
+      const runInferenceForGame = async () => {
+        if (!videoRef.current || !detectorRef.current || !isInferringRef.current) {
+          console.warn('⚠️ Inference loop condition failed:', {
+            hasVideo: !!videoRef.current,
+            hasDetector: !!detectorRef.current,
+            isInferring: isInferringRef.current
+          })
+          return
+        }
+
+        try {
+          const currentTime = performance.now()
+          
+          // Pose inference
+          const inferStart = performance.now()
+          const rawKeypoints = await detectorRef.current.estimatePoses(videoRef.current)
+          const inferEnd = performance.now()
+          const inferTime = inferEnd - inferStart
+          
+          setInferenceTime(inferTime)
+          
+          // Apply smoothing
+          const smoothedKeypoints = processKeypoints(
+            rawKeypoints,
+            smootherRef.current!,
+            scoreThreshold
+          )
+          
+          setKeypoints(smoothedKeypoints)
+
+          // Update rhythm game engine
+          if (rhythmEngineRef.current) {
+            rhythmEngineRef.current.update()
+            setVisibleNotes(rhythmEngineRef.current.getVisibleNotes())
+            setGameCurrentTime(rhythmEngineRef.current.getCurrentTime())
+          }
+
+          // Gesture detection
+          if (gestureDetectorRef.current && rhythmEngineRef.current) {
+            const gestureResult = gestureDetectorRef.current.detect(smoothedKeypoints, currentTime)
+            
+            if (gestureResult.event) {
+              const gameTime = rhythmEngineRef.current.getCurrentTime()
+              const judgeInfo = rhythmEngineRef.current.onUserInput(gestureResult.event, gameTime)
+              
+              if (judgeInfo) {
+                console.log(`🎯 ${judgeInfo.result?.toUpperCase()}:`, {
+                  timing: judgeInfo.timingError.toFixed(0) + 'ms',
+                  note: judgeInfo.note.type
+                })
+              }
+              
+              // Trigger drum flash effect
+              if (gestureResult.event === 'hit_left' || gestureResult.event === 'hit_both') {
+                drumFlashRef.current.left = 1.0
+              }
+              if (gestureResult.event === 'hit_right' || gestureResult.event === 'hit_both') {
+                drumFlashRef.current.right = 1.0
+              }
+            }
+            
+            // Update drum flash decay
+            drumFlashRef.current.left = Math.max(0, drumFlashRef.current.left - 0.06)
+            drumFlashRef.current.right = Math.max(0, drumFlashRef.current.right - 0.06)
+            
+            setDrumHits({
+              left: drumFlashRef.current.left,
+              right: drumFlashRef.current.right
+            })
+          }
+
+          // Update FPS
+          const inferFps = inferFpsRef.current.update(currentTime)
+          const renderFps = renderFpsRef.current.update(currentTime)
+          setFps({ infer: inferFps, render: renderFps })
+
+          // Continue to next frame
+          animationFrameRef.current = requestAnimationFrame(runInferenceForGame)
+        } catch (error) {
+          console.error('Inference error:', error)
+          setInferenceStatus('stopped')
+          isInferringRef.current = false
+        }
+      }
+
+      console.log('🎮 About to start inference loop with:', {
+        hasVideo: !!videoRef.current,
+        hasDetector: !!detectorRef.current,
+        isInferring: isInferringRef.current
+      })
+      
+      runInferenceForGame()
+      
+      console.log('🎮 Inference loop started!')
+      
+    } catch (error) {
+      console.error('❌ Failed to start game:', error)
+      alert('Failed to start game. Please check if audio files and charts exist.')
+      setIsLoadingSong(false)
+    }
+  }, [selectedSong, selectedDifficulty, scoreThreshold])
 
   // Handle video ready
   const handleVideoReady = useCallback((video: HTMLVideoElement) => {
@@ -119,162 +354,44 @@ export default function App() {
     setCameraStatus(status)
   }, [])
 
-  // Start inference
+  // Start inference (rhythm game mode only)
   const handleStart = useCallback(async () => {
     console.log('🚀 handleStart called')
     
     if (!videoRef.current || !detectorRef.current) {
-      console.warn('Cannot start inference: video or detector not ready')
+      console.warn('Cannot start: video or detector not ready')
       return
     }
 
-    // 首次启动时初始化音频
-    console.log('🔄 About to initialize audio...')
+    // Initialize audio
     await initializeAudio()
-    console.log('✅ Audio initialization completed (or skipped)')
 
-    console.log('Starting inference...')
-    setInferenceStatus('running')
-    isInferringRef.current = true
-    inferFpsRef.current.reset()
-    renderFpsRef.current.reset()
-    
-    // 重置手势检测器和统计
-    if (gestureDetectorRef.current) {
-      gestureDetectorRef.current.reset()
-    }
-    setHitStats({ left: 0, right: 0, both: 0, total: 0 })
-    drumFlashRef.current = { left: 0, right: 0 }
-    setDrumHits({ left: 0, right: 0 })
-
-    const runInference = async () => {
-      if (!videoRef.current || !detectorRef.current || !isInferringRef.current) {
-        return
-      }
-
-      try {
-        const currentTime = performance.now()
-        
-        // Inference (measure time)
-        const inferStart = performance.now()
-        const rawKeypoints = await detectorRef.current.estimatePoses(videoRef.current)
-        const inferEnd = performance.now()
-        const inferTime = inferEnd - inferStart
-        
-        setInferenceTime(inferTime)
-        
-        // Apply fast EMA smoothing (alpha=0.7) - responsive yet stable
-        const smoothedKeypoints = processKeypoints(
-          rawKeypoints,
-          smootherRef.current!,
-          scoreThreshold
-        )
-        
-        setKeypoints(smoothedKeypoints)
-
-        // Gesture detection - use smoothed keypoints (fast EMA ensures accuracy)
-        if (gestureDetectorRef.current) {
-          const gestureResult = gestureDetectorRef.current.detect(smoothedKeypoints, currentTime)
-          
-          // Handle gesture events
-          if (gestureResult.event) {
-            // Update statistics
-            setHitStats(prev => {
-              const newStats = { ...prev, total: prev.total + 1 }
-              if (gestureResult.event === 'hit_left') newStats.left++
-              if (gestureResult.event === 'hit_right') newStats.right++
-              if (gestureResult.event === 'hit_both') newStats.both++
-              return newStats
-            })
-            
-            // Trigger drum flash effect
-            if (gestureResult.event === 'hit_left' || gestureResult.event === 'hit_both') {
-              drumFlashRef.current.left = 1.0
-            }
-            if (gestureResult.event === 'hit_right' || gestureResult.event === 'hit_both') {
-              drumFlashRef.current.right = 1.0
-            }
-            
-            // Play audio
-            console.log('🔊 Audio check:', {
-              hasAudioManager: !!audioManagerRef.current,
-              audioInitialized: audioInitialized,
-              event: gestureResult.event
-            })
-            
-            if (audioManagerRef.current) {
-              const velocity = gestureResult.event === 'hit_left' 
-                ? Math.abs(gestureResult.leftVelocity.y)
-                : gestureResult.event === 'hit_right'
-                ? Math.abs(gestureResult.rightVelocity.y)
-                : Math.max(Math.abs(gestureResult.leftVelocity.y), Math.abs(gestureResult.rightVelocity.y))
-              
-              console.log('🔊 Playing audio:', { event: gestureResult.event, velocity: velocity.toFixed(4) })
-              
-              // Normalize velocity for audio (threshold: 0.0015, fast: ~0.004-0.006 normalized coords/ms)
-              audioManagerRef.current.playGestureSound(gestureResult.event, velocity / 0.004)
-            } else {
-              console.warn('⚠️ Audio not ready:', {
-                hasManager: !!audioManagerRef.current,
-                initialized: audioInitialized
-              })
-            }
-          }
-          
-          // Update drum flash decay
-          drumFlashRef.current.left = Math.max(0, drumFlashRef.current.left - 0.06)
-          drumFlashRef.current.right = Math.max(0, drumFlashRef.current.right - 0.06)
-          
-          // Update drum hits state for rendering
-          setDrumHits({
-            left: drumFlashRef.current.left,
-            right: drumFlashRef.current.right
-          })
-        }
-
-        // Update FPS
-        const inferFps = inferFpsRef.current.update(currentTime)
-        const renderFps = renderFpsRef.current.update(currentTime)
-        setFps({ infer: inferFps, render: renderFps })
-
-        // Generate and print payload (if needed for debugging)
-        const calibration: Calibration = { distance: 1.0, azimuth: 0, elevation: 0 }
-        const payload: FramePayload = {
-          sourceId: 'local-debug',
-          ts: performance.timeOrigin + performance.now() / 1000,
-          fps: { infer: inferFps, render: renderFps },
-          keypoints: smoothedKeypoints,
-          calibration,
-          meta: {
-            ua: navigator.userAgent,
-            platform: navigator.platform,
-            version: '1.0.0'
-          }
-        }
-
-        // Uncomment for debugging: console.log('Frame Payload:', payload)
-        void payload // Suppress unused variable warning
-
-        // Continue to next frame
-        animationFrameRef.current = requestAnimationFrame(runInference)
-      } catch (error) {
-        console.error('Inference error:', error)
-        setInferenceStatus('stopped')
-        isInferringRef.current = false
-      }
+    // Show song selector if no song is selected
+    if (!selectedSong) {
+      setShowSongSelector(true)
+      return
     }
 
-    runInference()
-  }, [scoreThreshold, initializeAudio])
+    // If song is selected, start the rhythm game
+    await startRhythmGame()
+  }, [initializeAudio, selectedSong, startRhythmGame])
 
   // Stop inference
   const handleStop = useCallback(() => {
-    console.log('Stopping inference...')
+    console.log('Stopping...')
     setInferenceStatus('stopped')
     isInferringRef.current = false
     if (animationFrameRef.current) {
       cancelAnimationFrame(animationFrameRef.current)
       animationFrameRef.current = null
+    }
+    
+    // Stop rhythm game if running
+    if (rhythmEngineRef.current) {
+      rhythmEngineRef.current.stop()
+      rhythmEngineRef.current.dispose()
+      rhythmEngineRef.current = null
+      console.log('Rhythm game stopped')
     }
   }, [])
 
@@ -287,14 +404,22 @@ export default function App() {
   // Handle score threshold change
   const handleScoreThresholdChange = useCallback((threshold: number) => {
     setScoreThreshold(threshold)
-    // Note: Don't change EMA alpha! It's fixed at 0.3 for smooth visualization
-    // Gesture detection uses raw keypoints anyway
   }, [])
 
-  // Initialize
+  // Initialize detector (only runs once on mount or when model changes)
   useEffect(() => {
     initializeDetector(currentModel)
-    
+  }, [initializeDetector, currentModel])
+  
+  // Auto show song selector when camera is ready
+  useEffect(() => {
+    if (cameraStatus === 'capturing' && !selectedSong && !showSongSelector && inferenceStatus === 'stopped') {
+      setShowSongSelector(true)
+    }
+  }, [cameraStatus, selectedSong, showSongSelector, inferenceStatus])
+  
+  // Cleanup on unmount
+  useEffect(() => {
     return () => {
       isInferringRef.current = false
       if (detectorRef.current) {
@@ -307,9 +432,9 @@ export default function App() {
         cancelAnimationFrame(animationFrameRef.current)
       }
     }
-  }, [initializeDetector, currentModel])
+  }, [])
   
-  // 处理页面可见性变化（恢复音频上下文）
+  // Handle page visibility change (resume audio context)
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (!document.hidden && audioManagerRef.current) {
@@ -337,10 +462,87 @@ export default function App() {
               isVisible={inferenceStatus === 'running' && cameraStatus === 'capturing'}
               drumHits={drumHits}
             />
+            
+            {/* Note Track */}
+            {inferenceStatus === 'running' && videoRef.current && (
+              <NoteTrack
+                visibleNotes={visibleNotes}
+                videoWidth={videoRef.current.videoWidth || 640}
+                videoHeight={videoRef.current.videoHeight || 480}
+              />
+            )}
+            
+            {/* Drum Mode Indicator */}
+            {cameraStatus === 'capturing' && inferenceStatus !== 'running' && (
+              <div style={{
+                position: 'absolute',
+                top: '20px',
+                left: '50%',
+                transform: 'translateX(-50%)',
+                background: 'rgba(0, 0, 0, 0.85)',
+                backdropFilter: 'blur(10px)',
+                padding: '12px 24px',
+                borderRadius: '30px',
+                color: 'white',
+                fontSize: '16px',
+                fontWeight: 'bold',
+                boxShadow: '0 4px 20px rgba(0, 0, 0, 0.4)',
+                border: '2px solid rgba(255, 107, 157, 0.5)',
+                zIndex: 15
+              }}>
+                🥁 Drum Mode
+              </div>
+            )}
+            
+            {/* Song Selector */}
+            {showSongSelector && (
+              <SongSelector
+                songs={availableSongs}
+                selectedSong={selectedSong}
+                selectedDifficulty={selectedDifficulty}
+                onSelectSong={setSelectedSong}
+                onSelectDifficulty={setSelectedDifficulty}
+                onStart={startRhythmGame}
+                onClose={() => setShowSongSelector(false)}
+                isLoading={isLoadingSong}
+              />
+            )}
           </div>
         </div>
 
         <div className="control-section">
+          {/* Select Song Button */}
+          {cameraStatus === 'capturing' && inferenceStatus !== 'running' && !showSongSelector && (
+            <div style={{ marginBottom: '20px' }}>
+              <button
+                onClick={() => setShowSongSelector(true)}
+                style={{
+                  width: '100%',
+                  padding: '16px',
+                  background: 'linear-gradient(90deg, #ff6b9d 0%, #ff9a76 100%)',
+                  border: '2px solid #ff6b9d',
+                  borderRadius: '12px',
+                  color: 'white',
+                  fontSize: '16px',
+                  fontWeight: 'bold',
+                  cursor: 'pointer',
+                  transition: 'all 0.3s ease',
+                  boxShadow: '0 4px 15px rgba(255, 107, 157, 0.4)'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.transform = 'translateY(-2px)'
+                  e.currentTarget.style.boxShadow = '0 6px 20px rgba(255, 107, 157, 0.6)'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = 'translateY(0)'
+                  e.currentTarget.style.boxShadow = '0 4px 15px rgba(255, 107, 157, 0.4)'
+                }}
+              >
+                🎮 Select Song & Start Game
+              </button>
+            </div>
+          )}
+          
           <ControlPanel
             onStart={handleStart}
             onStop={handleStop}
@@ -358,71 +560,26 @@ export default function App() {
           />
         </div>
       </main>
-
-      {/* Hit Statistics Display */}
-      {inferenceStatus === 'running' && (
-        <div style={{
-          position: 'fixed',
-          bottom: '20px',
-          right: '20px',
-          background: 'rgba(0, 0, 0, 0.85)',
-          color: 'white',
-          padding: '12px 16px',
-          borderRadius: '10px',
-          fontFamily: 'monospace',
-          fontSize: '13px',
-          zIndex: 1000,
-          backdropFilter: 'blur(10px)',
-          minWidth: '180px',
-          boxShadow: '0 4px 20px rgba(0, 0, 0, 0.4)'
-        }}>
-          <div style={{ fontWeight: 'bold', marginBottom: '8px', fontSize: '14px', textAlign: 'center' }}>
-            🥁 Hit Stats
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span>Left:</span>
-              <span style={{ color: '#4facfe', fontWeight: 'bold' }}>{hitStats.left}</span>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span>Right:</span>
-              <span style={{ color: '#ff6b9d', fontWeight: 'bold' }}>{hitStats.right}</span>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span>Both:</span>
-              <span style={{ color: '#00ff88', fontWeight: 'bold' }}>{hitStats.both}</span>
-            </div>
-            <div style={{ 
-              borderTop: '1px solid rgba(255, 255, 255, 0.3)', 
-              paddingTop: '4px', 
-              marginTop: '4px',
-              display: 'flex',
-              justifyContent: 'space-between'
-            }}>
-              <span>Total:</span>
-              <span style={{ fontWeight: 'bold' }}>{hitStats.total}</span>
-            </div>
-          </div>
-          {!audioInitialized && (
-            <div style={{ 
-              marginTop: '8px', 
-              padding: '6px', 
-              background: 'rgba(255, 165, 0, 0.2)',
-              borderRadius: '4px',
-              fontSize: '11px',
-              color: '#ffa500',
-              textAlign: 'center'
-            }}>
-              ⚠️ Audio not ready
-            </div>
-          )}
-        </div>
+      
+      {/* Progress Bar */}
+      {inferenceStatus === 'running' && selectedSong && (
+        <ProgressBar
+          currentTime={gameCurrentTime}
+          duration={gameDuration}
+          stats={rhythmGameStats}
+          songName={selectedSong?.name}
+          difficulty={selectedDifficulty}
+        />
+      )}
+      
+      {/* Judgment Feedback */}
+      {currentJudge && currentJudge.result && (
+        <JudgeFeedback
+          result={currentJudge.result}
+          timingError={currentJudge.timingError}
+        />
       )}
 
-      {/* Cleanup the footer, keep minimal if needed */}
-      <div style={{ display: 'none' }}>
-        {/* Hit Statistics Display - moved to floating overlay */}
-      </div>
     </div>
   )
 }

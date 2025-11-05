@@ -1,0 +1,19 @@
+# 音频分析和谱面生成工具依赖
+# 安装命令: pip install -r requirements.txt
+
+# 核心音频处理库
+librosa>=0.10.0              # 音频分析（节拍检测、频谱分析）
+numpy>=1.24.0                # 数值计算
+scipy>=1.10.0                # 科学计算
+soundfile>=0.12.0            # 音频文件读写
+pydub>=0.25.1                # 音频格式转换（支持MP3）
+
+# 可选：LLM优化
+openai>=1.0.0                # OpenAI API
+
+# 配置和数据处理
+pyyaml>=6.0                  # 配置文件读取
+
+# 可视化（用于调试）
+matplotlib>=3.7.0            # 谱面可视化
+

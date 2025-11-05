@@ -36,3 +36,26 @@ lerna-debug.log*
 .cache/
 .parcel-cache/
 .eslintcache
+
+# Python
+public/scripts/venv/
+public/scripts/__pycache__/
+public/scripts/utils/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Generated audio analysis files
+public/audio/songs/*/drum_analysis.json
+public/audio/songs/*/metadata.json
+
+# Documentation/Summary files (auto-generated)
+*_SUMMARY.md
+*_IMPLEMENTATION.md
+*_COMPLETE.md
+*_CHANGES.md
+*_STANDARDS.md
+*_QUICKSTART.md
+FIXES_*.md
+
+Research_Note.md

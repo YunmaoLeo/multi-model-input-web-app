@@ -1,0 +1,60 @@
+# 谱面生成配置文件
+
+# 音频处理参数
+audio:
+  sample_rate: 44100          # 采样率
+  format: "wav"               # 输出格式
+
+# 频段划分（用于鼓点识别）
+frequency_bands:
+  kick:                       # 底鼓（Kick）
+    min: 20
+    max: 250
+  snare:                      # 军鼓（Snare）
+    min: 250
+    max: 2500
+  hihat:                      # 踩镲（HiHat）
+    min: 2500
+    max: 20000
+
+# 难度配置
+difficulty:
+  easy:
+    note_density: 0.40        # 保留40%的音符 (增加)
+    min_interval: 0.45        # 最小间隔450ms (减少)
+    kick_threshold: 0.50      # 底鼓能量阈值（归一化，降低）
+    snare_threshold: 0.45
+    hihat_threshold: 0.40
+  
+  normal:
+    note_density: 0.70        # 从0.45增加到0.70
+    min_interval: 0.25        # 从0.35减少到0.25
+    kick_threshold: 0.30      # 从0.45降低到0.30
+    snare_threshold: 0.28     # 从0.40降低到0.28
+    hihat_threshold: 0.25     # 从0.40降低到0.25
+  
+  hard:
+    note_density: 0.85        # 从0.70增加到0.85
+    min_interval: 0.15        # 从0.20减少到0.15
+    kick_threshold: 0.20      # 从0.25降低到0.20
+    snare_threshold: 0.18     # 从0.25降低到0.18
+    hihat_threshold: 0.15     # 从0.25降低到0.15
+
+# 手势映射
+mapping:
+  kick: "both"                # 底鼓 → 双手
+  snare: "right"              # 军鼓 → 右手
+  hihat: "left"               # 踩镲 → 左手
+
+# LLM优化配置（可选）
+llm:
+  enabled: false              # 是否启用LLM优化
+  api_key_env: "OPENAI_API_KEY"
+  model: "gpt-4"
+  temperature: 0.3
+
+# 输出路径
+output:
+  audio_dir: "../audio/songs"
+  chart_dir: "../charts"
+
