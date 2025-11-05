@@ -11,7 +11,6 @@ export class RhythmAudioPlayer {
   private isPlaying: boolean = false
   private startTime: number = 0
   private baseVolume: number = 0.25  // Start at low volume (25%)
-  private currentVolume: number = 0.25
   private targetVolume: number = 1.0  // Target volume when playing well
   private missCount: number = 0
   private consecutiveHits: number = 0
@@ -52,7 +51,6 @@ export class RhythmAudioPlayer {
       
       // Start playback at low volume
       this.gainNode.gain.setValueAtTime(this.baseVolume, this.audioContext.currentTime)
-      this.currentVolume = this.baseVolume
       this.audioSource.start(0)
       this.isPlaying = true
       
@@ -107,7 +105,6 @@ export class RhythmAudioPlayer {
       this.gainNode.gain.cancelScheduledValues(now)
       this.gainNode.gain.setValueAtTime(this.gainNode.gain.value, now)
       this.gainNode.gain.linearRampToValueAtTime(newVolume, now + 0.15)
-      this.currentVolume = newVolume
       
       console.log(`🔊 Volume increased (hits: ${this.consecutiveHits}, volume: ${(newVolume * 100).toFixed(0)}%)`)
     } catch (error) {
@@ -134,7 +131,6 @@ export class RhythmAudioPlayer {
       this.gainNode.gain.cancelScheduledValues(now)
       this.gainNode.gain.setValueAtTime(this.gainNode.gain.value, now)
       this.gainNode.gain.linearRampToValueAtTime(targetVolume, now + 0.2)
-      this.currentVolume = targetVolume
       
       console.log(`🔉 Volume reduced (miss count: ${this.missCount}, volume: ${(targetVolume * 100).toFixed(0)}%)`)
     } catch (error) {

@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "lint": "eslint . --ext .ts,.tsx",
     "test": "vitest run",
-    "predeploy": "npm run build",
+    "predeploy": "npm run build && rm -rf dist/scripts dist/audio",
     "deploy": "gh-pages -d dist"
   },
   "dependencies": {

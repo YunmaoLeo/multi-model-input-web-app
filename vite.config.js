@@ -13,5 +13,16 @@ export default defineConfig({
         port: 5173,
         host: 'localhost',
         strictPort: false
-    }
+    },
+    build: {
+        // Exclude scripts directory from production build
+        assetsInlineLimit: 0,
+        rollupOptions: {
+            output: {
+                assetFileNames: 'assets/[name]-[hash][extname]'
+            }
+        }
+    },
+    // Use a custom public directory pattern to exclude scripts
+    publicDir: 'public'
 });
