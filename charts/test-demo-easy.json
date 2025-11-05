@@ -1,0 +1,204 @@
+{
+  "songId": "test-demo",
+  "difficulty": "easy",
+  "notes": [
+    {
+      "time": 24.752,
+      "type": "right",
+      "velocity": 0.9
+    },
+    {
+      "time": 27.016,
+      "type": "both",
+      "velocity": 0.92
+    },
+    {
+      "time": 27.748,
+      "type": "right",
+      "velocity": 0.93
+    },
+    {
+      "time": 29.257,
+      "type": "right",
+      "velocity": 0.88
+    },
+    {
+      "time": 33.019,
+      "type": "both",
+      "velocity": 0.96
+    },
+    {
+      "time": 33.75,
+      "type": "right",
+      "velocity": 0.98
+    },
+    {
+      "time": 36.014,
+      "type": "both",
+      "velocity": 0.9
+    },
+    {
+      "time": 39.753,
+      "type": "right",
+      "velocity": 1.0
+    },
+    {
+      "time": 42.017,
+      "type": "both",
+      "velocity": 0.95
+    },
+    {
+      "time": 42.748,
+      "type": "right",
+      "velocity": 0.88
+    },
+    {
+      "time": 44.257,
+      "type": "right",
+      "velocity": 0.88
+    },
+    {
+      "time": 45.755,
+      "type": "right",
+      "velocity": 0.97
+    },
+    {
+      "time": 48.019,
+      "type": "both",
+      "velocity": 0.99
+    },
+    {
+      "time": 48.75,
+      "type": "right",
+      "velocity": 0.9
+    },
+    {
+      "time": 51.014,
+      "type": "both",
+      "velocity": 0.86
+    },
+    {
+      "time": 51.746,
+      "type": "right",
+      "velocity": 0.85
+    },
+    {
+      "time": 53.255,
+      "type": "right",
+      "velocity": 0.94
+    },
+    {
+      "time": 54.753,
+      "type": "right",
+      "velocity": 0.92
+    },
+    {
+      "time": 57.017,
+      "type": "both",
+      "velocity": 0.92
+    },
+    {
+      "time": 57.748,
+      "type": "right",
+      "velocity": 0.94
+    },
+    {
+      "time": 59.257,
+      "type": "right",
+      "velocity": 0.88
+    },
+    {
+      "time": 63.019,
+      "type": "both",
+      "velocity": 0.98
+    },
+    {
+      "time": 63.75,
+      "type": "right",
+      "velocity": 0.99
+    },
+    {
+      "time": 66.014,
+      "type": "both",
+      "velocity": 0.9
+    },
+    {
+      "time": 69.753,
+      "type": "right",
+      "velocity": 1.0
+    },
+    {
+      "time": 72.017,
+      "type": "both",
+      "velocity": 0.95
+    },
+    {
+      "time": 72.748,
+      "type": "right",
+      "velocity": 0.86
+    },
+    {
+      "time": 74.257,
+      "type": "right",
+      "velocity": 0.86
+    },
+    {
+      "time": 75.755,
+      "type": "right",
+      "velocity": 0.97
+    },
+    {
+      "time": 78.019,
+      "type": "both",
+      "velocity": 1.0
+    },
+    {
+      "time": 78.75,
+      "type": "right",
+      "velocity": 0.92
+    },
+    {
+      "time": 81.014,
+      "type": "both",
+      "velocity": 0.87
+    },
+    {
+      "time": 83.255,
+      "type": "right",
+      "velocity": 0.93
+    },
+    {
+      "time": 84.753,
+      "type": "right",
+      "velocity": 0.9
+    },
+    {
+      "time": 87.748,
+      "type": "right",
+      "velocity": 0.94
+    },
+    {
+      "time": 89.258,
+      "type": "right",
+      "velocity": 0.87
+    },
+    {
+      "time": 93.019,
+      "type": "both",
+      "velocity": 0.96
+    },
+    {
+      "time": 93.751,
+      "type": "right",
+      "velocity": 0.99
+    }
+  ],
+  "metadata": {
+    "generatedBy": "algorithm",
+    "noteCount": 38,
+    "leftCount": 24,
+    "rightCount": 31,
+    "bothCount": 41,
+    "averageInterval": 0.75
+  }
+}
