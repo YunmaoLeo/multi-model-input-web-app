@@ -19,7 +19,7 @@ export default function DrumChartGuide({
   videoHeight
 }: DrumChartGuideProps) {
   const judgeLineY = videoHeight * 0.55  // Same as rhythm game
-  const trackHeight = videoHeight
+  // const trackHeight = videoHeight
 
   // Helper to get pad position
   const getPadPosition = (drumId: string): { x: number; y: number } | null => {
