@@ -5,6 +5,10 @@
 
 import type { DrumPad } from '@/types/drum'
 
+// Get base URL for assets (supports GitHub Pages subpath deployment)
+// @ts-ignore - import.meta.env is provided by Vite
+const BASE_URL = import.meta.env?.BASE_URL || '/'
+
 export class DrumPadManager {
   private pads: DrumPad[] = []
 
@@ -27,7 +31,7 @@ export class DrumPadManager {
         name: 'Kick',
         position: { x: 0.25, y: 0.3 },   // Top row - left
         radius: 0.15,
-        audioPath: '/assets/drums/kick.wav',
+        audioPath: `${BASE_URL}assets/drums/kick.wav`,
         color: '#ff6b6b',
         icon: '🥁'
       },
@@ -36,7 +40,7 @@ export class DrumPadManager {
         name: 'Snare',
         position: { x: 0.5, y: 0.3 },   // Top row - center
         radius: 0.15,
-        audioPath: '/assets/drums/snare.wav',
+        audioPath: `${BASE_URL}assets/drums/snare.wav`,
         color: '#4ecdc4',
         icon: '🥁'
       },
@@ -45,7 +49,7 @@ export class DrumPadManager {
         name: 'HiHat',
         position: { x: 0.75, y: 0.3 },   // Top row - right
         radius: 0.15,
-        audioPath: '/assets/drums/hihat.wav',
+        audioPath: `${BASE_URL}assets/drums/hihat.wav`,
         color: '#45b7d1',
         icon: '🥁'
       },
@@ -54,7 +58,7 @@ export class DrumPadManager {
         name: 'Crash',
         position: { x: 0.25, y: 0.75 },   // Bottom row - left (increased distance)
         radius: 0.15,
-        audioPath: '/assets/drums/crash.wav',
+        audioPath: `${BASE_URL}assets/drums/crash.wav`,
         color: '#96ceb4',
         icon: '🥁'
       },
@@ -63,7 +67,7 @@ export class DrumPadManager {
         name: 'Ride',
         position: { x: 0.5, y: 0.75 },   // Bottom row - center (increased distance)
         radius: 0.15,
-        audioPath: '/assets/drums/ride.wav',
+        audioPath: `${BASE_URL}assets/drums/ride.wav`,
         color: '#ffeaa7',
         icon: '🥁'
       },
@@ -72,7 +76,7 @@ export class DrumPadManager {
         name: 'Tom',
         position: { x: 0.75, y: 0.75 },   // Bottom row - right (increased distance)
         radius: 0.15,
-        audioPath: '/assets/drums/tom.wav',
+        audioPath: `${BASE_URL}assets/drums/tom.wav`,
         color: '#a29bfe',
         icon: '🥁'
       }
