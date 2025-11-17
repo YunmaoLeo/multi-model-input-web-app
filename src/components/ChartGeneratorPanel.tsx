@@ -68,7 +68,7 @@ export default function ChartGeneratorPanel({
     try {
       // Use user-provided API key if available, otherwise use system config
       const generator = userApiKey.trim() 
-        ? new LLMChartGenerator(userApiKey.trim())
+        ? new LLMChartGenerator({ apiKey: userApiKey.trim() })
         : new LLMChartGenerator()
       
       const chart = await generator.generateChart(prompt, difficulty, duration)

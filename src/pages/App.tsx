@@ -1055,14 +1055,15 @@ export default function App() {
                     />
                   ) : (
                     // Debug: Log why DrumChartGuide is not rendering
-                    <div style={{ display: 'none' }}>
-                      {console.log('❌ DrumChartGuide not rendering:', {
+                    (() => {
+                      console.log('❌ DrumChartGuide not rendering:', {
                         hasChart: !!currentChart,
                         hasEngine: !!drumGameEngineRef.current,
                         padsCount: drumPads.length,
                         inferenceStatus
-                      })}
-                    </div>
+                      })
+                      return null
+                    })()
                   )}
                   {/* Hand Position Debug */}
                   {showHandDebug && (
@@ -1398,8 +1399,8 @@ export default function App() {
             fps={fps}
             keypointCount={keypoints.length}
             tfBackend={tfBackend}
-            disableStart={gameMode === 'drum' && currentChart && !isReadyToStart}
-            disableStartReason={gameMode === 'drum' && currentChart && !isReadyToStart ? 'Waiting for chart generation to complete...' : undefined}
+            disableStart={gameMode === 'drum' && !!currentChart && !isReadyToStart}
+            disableStartReason={gameMode === 'drum' && !!currentChart && !isReadyToStart ? 'Waiting for chart generation to complete...' : undefined}
             inferenceTime={inferenceTime}
           />
         </div>

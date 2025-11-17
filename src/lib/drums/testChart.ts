@@ -6,7 +6,6 @@
 import type { DrumChart } from '@/types/drum'
 
 export const TEST_CHART: DrumChart = {
-  title: 'Test Pattern',
   theme: 'test',
   difficulty: 'normal',
   duration: 30,
@@ -104,7 +103,6 @@ export const TEST_CHART: DrumChart = {
  * Simple test chart - just 10 seconds with basic pattern
  */
 export const SIMPLE_TEST_CHART: DrumChart = {
-  title: 'Simple Test',
   theme: 'test-simple',
   difficulty: 'easy',
   duration: 10,
