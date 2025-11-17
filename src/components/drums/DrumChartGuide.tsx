@@ -1,6 +1,6 @@
 /**
  * Drum Chart Guide
- * Displays falling notes to guide user
+ * Displays falling notes to guide user (rhythm game style)
  */
 
 import type { VisibleDrumNote, DrumPad } from '@/types/drum'
@@ -18,9 +18,6 @@ export default function DrumChartGuide({
   videoWidth,
   videoHeight
 }: DrumChartGuideProps) {
-  const judgeLineY = videoHeight * 0.55  // Same as rhythm game
-  // const trackHeight = videoHeight
-
   // Helper to get pad position
   const getPadPosition = (drumId: string): { x: number; y: number } | null => {
     const pad = pads.find(p => p.id === drumId)
@@ -31,6 +28,13 @@ export default function DrumChartGuide({
     }
   }
 
+  // Debug: Log render
+  console.log('🎨 DrumChartGuide rendering:', {
+    notesCount: notes.length,
+    padsCount: pads.length,
+    videoSize: `${videoWidth}x${videoHeight}`
+  })
+
   return (
     <div
       style={{
@@ -40,24 +44,66 @@ export default function DrumChartGuide({
         width: videoWidth,
         height: videoHeight,
         pointerEvents: 'none',
-        zIndex: 8
+        zIndex: 15  // Higher z-index to ensure visibility
       }}
     >
-      {/* Judge line */}
-      <div
-        style={{
-          position: 'absolute',
-          left: 0,
-          top: judgeLineY,
-          width: videoWidth,
-          height: '3px',
-          background: 'linear-gradient(to right, #4facfe, #00f2fe)',
-          boxShadow: '0 0 10px rgba(79, 172, 254, 0.8)',
-          zIndex: 10
-        }}
-      />
+      {/* Pad target indicators - show where to hit */}
+      {pads.map((pad, index) => {
+        const padPos = getPadPosition(pad.id)
+        if (!padPos) {
+          console.warn(`❌ Pad position not found for ${pad.id}`)
+          return null
+        }
 
-      {/* Notes */}
+        const targetSize = 80
+        
+        // Debug: Log first pad
+        if (index === 0) {
+          console.log('🎯 Rendering pad target:', {
+            id: pad.id,
+            position: padPos,
+            color: pad.color,
+            icon: pad.icon
+          })
+        }
+
+        return (
+          <div
+            key={`target-${pad.id}`}
+            style={{
+              position: 'absolute',
+              left: padPos.x - targetSize / 2,
+              top: padPos.y - targetSize / 2,
+              width: targetSize,
+              height: targetSize,
+              borderRadius: '50%',
+              border: `4px solid ${pad.color}`,
+              backgroundColor: `${pad.color}22`,
+              boxShadow: `
+                inset 0 0 20px ${pad.color}44,
+                0 0 30px ${pad.color}66
+              `,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 14
+            }}
+          >
+            {/* Pad icon/label */}
+            <div style={{
+              fontSize: '24px',
+              fontWeight: 'bold',
+              color: pad.color,
+              textShadow: `0 0 8px ${pad.color}, 0 2px 4px rgba(0,0,0,0.8)`,
+              filter: 'drop-shadow(0 0 4px rgba(255,255,255,0.5))'
+            }}>
+              {pad.icon}
+            </div>
+          </div>
+        )
+      })}
+
+      {/* Falling notes */}
       {notes.map(note => {
         const pad = pads.find(p => p.id === note.drum)
         if (!pad) return null
@@ -66,12 +112,18 @@ export default function DrumChartGuide({
         if (!padPos) return null
 
         // Calculate note position (falling from top to pad position)
-        const startY = 0
+        const startY = -50  // Start above screen
         const endY = padPos.y
         const noteY = startY + (endY - startY) * note.progress
 
-        // Note size
-        const noteSize = 40
+        // Note size increases as it approaches the target
+        const baseSize = 35
+        const sizeMultiplier = 1 + (note.progress * 0.5)
+        const noteSize = baseSize * sizeMultiplier
+
+        // Opacity and glow increase as note approaches
+        const opacity = 0.6 + (note.progress * 0.4)
+        const glowIntensity = 10 + (note.progress * 30)
 
         return (
           <div
@@ -83,25 +135,60 @@ export default function DrumChartGuide({
               width: noteSize,
               height: noteSize,
               borderRadius: '50%',
-              background: `radial-gradient(circle, ${pad.color}dd, ${pad.color}99)`,
-              border: '3px solid white',
+              background: `
+                radial-gradient(
+                  circle at 30% 30%,
+                  ${pad.color}ff,
+                  ${pad.color}dd 40%,
+                  ${pad.color}99
+                )
+              `,
+              border: `${2 + note.progress * 2}px solid rgba(255, 255, 255, ${0.6 + note.progress * 0.4})`,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              fontSize: '20px',
+              fontSize: `${16 + note.progress * 6}px`,
               fontWeight: 'bold',
               color: 'white',
-              textShadow: '0 2px 4px rgba(0,0,0,0.8)',
-              boxShadow: `0 0 20px ${pad.color}, 0 4px 8px rgba(0,0,0,0.3)`,
-              opacity: note.progress > 0.8 ? 1.0 : 0.7,
-              transition: 'opacity 0.1s ease',
-              zIndex: 9
+              textShadow: `
+                0 2px 4px rgba(0,0,0,0.9),
+                0 0 ${glowIntensity}px ${pad.color}
+              `,
+              boxShadow: `
+                0 0 ${glowIntensity}px ${pad.color},
+                0 0 ${glowIntensity * 1.5}px ${pad.color}88,
+                0 4px 12px rgba(0,0,0,0.4)
+              `,
+              opacity,
+              zIndex: 16,
+              transform: `scale(${note.progress > 0.9 ? 1.1 : 1})`,
+              transition: 'transform 0.05s ease-out'
             }}
           >
             {pad.icon}
           </div>
         )
       })}
+      
+      {/* Debug info */}
+      {notes.length > 0 && (
+        <div style={{
+          position: 'absolute',
+          top: 10,
+          left: 10,
+          backgroundColor: 'rgba(0,0,0,0.7)',
+          color: '#4ade80',
+          padding: '6px 12px',
+          borderRadius: '6px',
+          fontSize: '14px',
+          fontWeight: 'bold',
+          fontFamily: 'monospace',
+          zIndex: 20,
+          boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
+        }}>
+          ♪ {notes.length} note{notes.length !== 1 ? 's' : ''} incoming
+        </div>
+      )}
     </div>
   )
 }

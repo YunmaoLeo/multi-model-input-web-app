@@ -42,6 +42,10 @@ export class DrumGameEngine {
   private visibleNotes: VisibleDrumNote[] = []
   private lookaheadTime: number = 2.0  // Show notes 2s ahead
 
+  // Auto-play mode
+  private autoPlay: boolean = false
+  private playedNotes: Set<string> = new Set()  // Track which notes have been auto-played
+
   // Statistics
   private stats: DrumGameStats = {
     totalHits: 0,
@@ -87,6 +91,15 @@ export class DrumGameEngine {
     this.visibleNotes = []
     
     console.log(`📊 Chart loaded: ${this.notes.length} notes, ${chart.duration}s duration`)
+    
+    // Debug: Show first few notes
+    if (this.notes.length > 0) {
+      console.log('📝 First 3 notes:', this.notes.slice(0, 3).map(n => ({
+        time: n.time.toFixed(2),
+        drum: n.drum,
+        hand: n.hand
+      })))
+    }
   }
 
   /**
@@ -102,11 +115,12 @@ export class DrumGameEngine {
       throw new Error('No chart loaded')
     }
 
-    console.log('🚀 Drum game started')
+    console.log(`🚀 Drum game started (auto-play: ${this.autoPlay})`)
     this.state = 'playing'
     this.startTime = this.audioContext.currentTime
     this.currentNoteIndex = 0
     this.visibleNotes = []
+    this.playedNotes.clear()  // Reset played notes
     
     // Reset stats
     this.stats = {
@@ -119,6 +133,15 @@ export class DrumGameEngine {
       combo: 0,
       maxCombo: 0
     }
+    
+    // Debug: Log start state
+    console.log('🎬 Game start state:', {
+      startTime: this.startTime.toFixed(3),
+      lookaheadTime: this.lookaheadTime,
+      totalNotes: this.notes.length,
+      chartDuration: this.chart.duration,
+      firstNoteTime: this.notes[0]?.time.toFixed(2) || 'N/A'
+    })
   }
 
   /**
@@ -136,6 +159,17 @@ export class DrumGameEngine {
   }
 
   /**
+   * Set auto-play mode
+   */
+  public setAutoPlay(enabled: boolean): void {
+    this.autoPlay = enabled
+    if (!enabled) {
+      this.playedNotes.clear()
+    }
+    console.log(`Auto-play mode: ${enabled ? 'enabled' : 'disabled'}`)
+  }
+
+  /**
    * Update game state (called every frame)
    */
   public update(): void {
@@ -143,6 +177,17 @@ export class DrumGameEngine {
 
     // Update current time
     this.currentTime = this.audioContext.currentTime - this.startTime
+
+    // Debug: Log update occasionally
+    if (Math.random() < 0.02) {
+      console.log('🔄 DrumGameEngine.update()', {
+        currentTime: this.currentTime.toFixed(3),
+        autoPlay: this.autoPlay,
+        totalNotes: this.notes.length,
+        visibleNotes: this.visibleNotes.length,
+        playedNotes: this.playedNotes.size
+      })
+    }
 
     // Check if game should end
     if (this.chart && this.currentTime >= this.chart.duration) {
@@ -157,8 +202,80 @@ export class DrumGameEngine {
     // Update visible notes
     this.updateVisibleNotes()
 
-    // Check for missed notes
-    this.checkMissedNotes()
+    // Auto-play notes if enabled
+    if (this.autoPlay) {
+      this.autoPlayNotes()
+    }
+
+    // Check for missed notes (only if not in auto-play mode)
+    if (!this.autoPlay) {
+      this.checkMissedNotes()
+    }
+  }
+
+  /**
+   * Auto-play notes at their scheduled times
+   */
+  private autoPlayNotes(): void {
+    if (!this.chart) return
+
+    // Check all notes that should be played now
+    for (const note of this.notes) {
+      const noteId = `${note.time}-${note.drum}`
+      
+      // Skip if already played
+      if (this.playedNotes.has(noteId)) continue
+
+      // Check if it's time to play this note
+      const timeDiff = Math.abs(note.time - this.currentTime)
+      if (timeDiff < 0.05) {  // 50ms tolerance for auto-play
+        // Play the note automatically
+        console.log('🟢 Auto-playing note', {
+          drum: note.drum,
+          noteTime: note.time.toFixed(3),
+          currentTime: this.currentTime.toFixed(3)
+        })
+        this.audioPlayer.playDrum(note.drum, note.velocity || 1.0)
+        
+        // Mark as played
+        this.playedNotes.add(noteId)
+
+        // Update stats (count as perfect in auto-play mode)
+        this.stats.totalHits++
+        this.stats.perfect++
+        this.stats.combo++
+        this.stats.score += 100 * this.stats.combo
+        this.stats.maxCombo = Math.max(this.stats.maxCombo, this.stats.combo)
+
+        // Calculate accuracy
+        const totalJudged = this.stats.perfect + this.stats.good + this.stats.miss
+        if (totalJudged > 0) {
+          this.stats.accuracy = (this.stats.perfect + this.stats.good * 0.5) / totalJudged
+        }
+
+        // Remove from visible notes
+        this.visibleNotes = this.visibleNotes.filter(n => 
+          !(Math.abs(n.time - note.time) < 0.01 && n.drum === note.drum)
+        )
+
+        // Trigger callbacks
+        const hit: DrumHit = {
+          drumId: note.drum,
+          hand: note.hand,
+          position: { x: 0.5, y: 0.5 },  // Center position for auto-play
+          timestamp: this.currentTime,
+          velocity: note.velocity || 1.0
+        }
+
+        if (this.onHitCallback) {
+          this.onHitCallback(hit)
+        }
+
+        if (this.onStatsUpdateCallback) {
+          this.onStatsUpdateCallback(this.stats)
+        }
+      }
+    }
   }
 
   /**
@@ -284,6 +401,7 @@ export class DrumGameEngine {
   private scheduleNotes(): void {
     if (!this.chart) return
 
+    let scheduledCount = 0
     while (
       this.currentNoteIndex < this.notes.length &&
       this.notes[this.currentNoteIndex].time <= this.currentTime + this.lookaheadTime
@@ -298,6 +416,18 @@ export class DrumGameEngine {
 
       this.visibleNotes.push(visibleNote)
       this.currentNoteIndex++
+      scheduledCount++
+    }
+    
+    // Debug: Log when notes are scheduled
+    if (scheduledCount > 0) {
+      console.log('📅 Scheduled notes:', {
+        count: scheduledCount,
+        currentTime: this.currentTime.toFixed(3),
+        currentNoteIndex: this.currentNoteIndex,
+        totalNotes: this.notes.length,
+        visibleNotes: this.visibleNotes.length
+      })
     }
   }
 

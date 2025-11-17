@@ -29,6 +29,15 @@ import DrumPadDisplay from '@/components/drums/DrumPadDisplay'
 import HandPositionDebug from '@/components/drums/HandPositionDebug'
 import type { DrumPad } from '@/types/drum'
 
+// LLM chart generation and accompaniment imports
+import { DrumGameEngine } from '@/lib/drums/DrumGameEngine'
+import { AccompanimentGenerator } from '@/lib/openai/AccompanimentGenerator'
+import { AccompanimentPlayer } from '@/lib/accompaniment/AccompanimentPlayer'
+import ChartGeneratorPanel from '@/components/ChartGeneratorPanel'
+import DrumChartGuide from '@/components/drums/DrumChartGuide'
+import type { DrumChart, VisibleDrumNote } from '@/types/drum'
+import type { AccompanimentPattern, AccompanimentInstrument } from '@/types/accompaniment'
+
 export default function App() {
   // State management
   const [cameraStatus, setCameraStatus] = useState<CameraStatus>('idle')
@@ -53,6 +62,47 @@ export default function App() {
   const [mirrorX, setMirrorX] = useState(true)  // Mirror X coordinate (default true for front camera)
   const [leftHandDebugPos, setLeftHandDebugPos] = useState<{ x: number; y: number } | null>(null)
   const [rightHandDebugPos, setRightHandDebugPos] = useState<{ x: number; y: number } | null>(null)
+  
+  // LLM-generated chart state
+  const [currentChart, setCurrentChart] = useState<DrumChart | null>(null)
+  const [isGeneratingChart, setIsGeneratingChart] = useState(false)
+  const [autoPlay, setAutoPlay] = useState(false)
+  const [showChartDebug, setShowChartDebug] = useState(false)
+  const [chartDebugText, setChartDebugText] = useState<string | null>(null)
+  
+  // Accompaniment state (declare before using in effects)
+  const [accompanimentPatterns, setAccompanimentPatterns] = useState<Map<AccompanimentInstrument, AccompanimentPattern>>(new Map())
+  const [accompanimentEnabled, setAccompanimentEnabled] = useState(true)
+  const [accompanimentVolume, setAccompanimentVolume] = useState(0.5)
+  
+  // Generation progress state
+  const [generationProgress, setGenerationProgress] = useState<{
+    drumChart: 'idle' | 'generating' | 'completed' | 'error'
+    bass: 'idle' | 'generating' | 'completed' | 'error'
+    piano: 'idle' | 'generating' | 'completed' | 'error'
+  }>({
+    drumChart: 'idle',
+    bass: 'idle',
+    piano: 'idle'
+  })
+  const [isReadyToStart, setIsReadyToStart] = useState(false)
+  
+  // Use effect to update isReadyToStart when generation progress changes
+  useEffect(() => {
+    const drumReady = generationProgress.drumChart === 'completed'
+    const bassReady = !accompanimentEnabled || generationProgress.bass === 'completed' || generationProgress.bass === 'error' || generationProgress.bass === 'idle'
+    const pianoReady = !accompanimentEnabled || generationProgress.piano === 'completed' || generationProgress.piano === 'error' || generationProgress.piano === 'idle'
+    
+    if (drumReady && bassReady && pianoReady) {
+      setIsReadyToStart(true)
+      console.log('All generation complete! Ready to start.', { generationProgress })
+    } else {
+      setIsReadyToStart(false)
+    }
+  }, [generationProgress, accompanimentEnabled])
+  
+  // Drum chart notes for visualization
+  const [visibleDrumNotes, setVisibleDrumNotes] = useState<VisibleDrumNote[]>([])
   
   // Rhythm game state
   const [showSongSelector, setShowSongSelector] = useState(false)
@@ -85,6 +135,8 @@ export default function App() {
   const animationFrameRef = useRef<number | null>(null)
   const isInferringRef = useRef<boolean>(false)
   const drumFlashRef = useRef<{ left: number; right: number }>({ left: 0, right: 0 })
+  const currentChartRef = useRef<DrumChart | null>(null)
+  const autoPlayRef = useRef<boolean>(false)
   
   // Rhythm game refs
   const rhythmEngineRef = useRef<RhythmGameEngine | null>(null)
@@ -93,6 +145,11 @@ export default function App() {
   // Simple drum player ref
   const simpleDrumPlayerRef = useRef<SimpleDrumPlayer | null>(null)
   const hitDrumFlashRef = useRef<string | null>(null)
+  
+  // Drum game engine ref (for LLM-generated charts)
+  const drumGameEngineRef = useRef<DrumGameEngine | null>(null)
+  const accompanimentGeneratorRef = useRef<AccompanimentGenerator | null>(null)
+  const accompanimentPlayerRef = useRef<AccompanimentPlayer | null>(null)
   
   // Available songs
   const availableSongs: SongConfig[] = [
@@ -188,6 +245,118 @@ export default function App() {
       simpleDrumPlayerRef.current.setMirrorX(mirrorX)
     }
   }, [initializeAudio, mirrorX])
+
+  // Initialize drum game engine (for LLM-generated charts)
+  const initializeDrumGameEngine = useCallback(async () => {
+    if (!audioManagerRef.current?.isInitialized) {
+      await initializeAudio()
+    }
+
+    const audioContext = (audioManagerRef.current as any).context
+    if (!audioContext) {
+      throw new Error('AudioContext not available')
+    }
+
+    if (!drumGameEngineRef.current) {
+      drumGameEngineRef.current = new DrumGameEngine(audioContext)
+      await drumGameEngineRef.current.loadSamples()
+      
+      // Get drum pads from DrumGameEngine for UI display
+      const pads = drumGameEngineRef.current.getPadManager().getAllPads()
+      setDrumPads(pads)
+      
+      console.log('DrumGameEngine initialized')
+    }
+
+    // Initialize accompaniment generator and player
+    if (!accompanimentGeneratorRef.current) {
+      accompanimentGeneratorRef.current = new AccompanimentGenerator()
+    }
+
+    if (!accompanimentPlayerRef.current) {
+      accompanimentPlayerRef.current = new AccompanimentPlayer(audioContext)
+      accompanimentPlayerRef.current.setVolume(accompanimentVolume)
+    }
+  }, [initializeAudio, accompanimentVolume])
+
+  // Handle chart generation
+  const handleChartGenerated = useCallback(async (chart: DrumChart) => {
+    // Check if this is a test chart (theme starts with "test")
+    const isTestChart = chart.theme.startsWith('test')
+    
+    if (isTestChart) {
+      console.log('🧪 Test chart detected - skipping accompaniment generation')
+    }
+    
+    // Reset progress state
+    setGenerationProgress({
+      drumChart: 'completed',
+      bass: (!isTestChart && accompanimentEnabled) ? 'generating' : 'idle',
+      piano: (!isTestChart && accompanimentEnabled) ? 'generating' : 'idle'
+    })
+    
+    setCurrentChart(chart)
+    currentChartRef.current = chart  // Sync ref for use in callbacks
+    // Store raw chart JSON for debugging
+    try {
+      setChartDebugText(JSON.stringify(chart, null, 2))
+    } catch {
+      setChartDebugText(null)
+    }
+    
+    // Initialize drum game engine if not already initialized
+    await initializeDrumGameEngine()
+    
+    // Set chart in drum game engine
+    if (drumGameEngineRef.current) {
+      drumGameEngineRef.current.setChart(chart)
+      drumGameEngineRef.current.setAutoPlay(autoPlay)
+      autoPlayRef.current = autoPlay  // Sync ref
+    }
+
+    // Generate accompaniment patterns if enabled AND not a test chart
+    if (!isTestChart && accompanimentEnabled && accompanimentGeneratorRef.current) {
+      // Generate bass accompaniment
+      accompanimentGeneratorRef.current.generatePattern('bass', chart.theme, chart.duration, chart.bpm || 120)
+        .then((bassPattern) => {
+          if (accompanimentPlayerRef.current) {
+            accompanimentPlayerRef.current.loadPattern(bassPattern)
+          }
+          setAccompanimentPatterns(prev => {
+            const updated = new Map(prev)
+            updated.set('bass', bassPattern)
+            return updated
+          })
+          setGenerationProgress(prev => ({ ...prev, bass: 'completed' as const }))
+        })
+        .catch((err) => {
+          console.error('Failed to generate bass accompaniment:', err)
+          setGenerationProgress(prev => ({ ...prev, bass: 'error' as const }))
+        })
+      
+      // Generate piano accompaniment
+      accompanimentGeneratorRef.current.generatePattern('piano', chart.theme, chart.duration, chart.bpm || 120)
+        .then((pianoPattern) => {
+          if (accompanimentPlayerRef.current) {
+            accompanimentPlayerRef.current.loadPattern(pianoPattern)
+          }
+          setAccompanimentPatterns(prev => {
+            const updated = new Map(prev)
+            updated.set('piano', pianoPattern)
+            return updated
+          })
+          setGenerationProgress(prev => ({ ...prev, piano: 'completed' as const }))
+        })
+        .catch((err) => {
+          console.error('Failed to generate piano accompaniment:', err)
+          setGenerationProgress(prev => ({ ...prev, piano: 'error' as const }))
+        })
+    } else {
+      // No accompaniment needed (test chart or accompaniment disabled), ready to start immediately
+      setIsReadyToStart(true)
+      console.log('✅ Chart ready to start (no accompaniment).')
+    }
+  }, [initializeDrumGameEngine, autoPlay, accompanimentEnabled])
   
   // Load and start rhythm game
   const startRhythmGame = useCallback(async () => {
@@ -414,28 +583,110 @@ export default function App() {
         setKeypoints(smoothedKeypoints)
 
         // Gesture detection
-        if (gestureDetectorRef.current && simpleDrumPlayerRef.current) {
-          const gestureResult = gestureDetectorRef.current.detect(smoothedKeypoints, currentTime)
+        let gestureResult: any = null
+        let leftPos: { x: number; y: number } | null = null
+        let rightPos: { x: number; y: number } | null = null
+        
+        if (gestureDetectorRef.current) {
+          gestureResult = gestureDetectorRef.current.detect(smoothedKeypoints, currentTime)
           
           // Get hand positions
           const leftHandPos = gestureDetectorRef.current.getLeftHandPosition()
           const rightHandPos = gestureDetectorRef.current.getRightHandPosition()
           
-          const leftPos = leftHandPos.hasPosition ? { x: leftHandPos.x, y: leftHandPos.y } : null
-          const rightPos = rightHandPos.hasPosition ? { x: rightHandPos.x, y: rightHandPos.y } : null
+          leftPos = leftHandPos.hasPosition ? { x: leftHandPos.x, y: leftHandPos.y } : null
+          rightPos = rightHandPos.hasPosition ? { x: rightHandPos.x, y: rightHandPos.y } : null
           
           // Update debug positions
           setLeftHandDebugPos(leftPos)
           setRightHandDebugPos(rightPos)
+        }
+
+        // Update DrumGameEngine if we have a chart
+        if (currentChartRef.current && drumGameEngineRef.current && isInferringRef.current) {
+          // Update game engine first (this updates currentTime)
+          drumGameEngineRef.current.update()
           
-          // Process hit
-          if (gestureResult.event && videoRef.current) {
-            const screenWidth = videoRef.current.videoWidth || 640
-            const screenHeight = videoRef.current.videoHeight || 480
+          // Update visible drum notes for visualization
+          const visibleNotes = drumGameEngineRef.current.getVisibleNotes()
+          setVisibleDrumNotes(visibleNotes)
+          
+          // Debug: Log visible notes state
+          if (Math.random() < 0.05) {
+            console.log('📝 Visible notes state:', {
+              count: visibleNotes.length,
+              stateCount: visibleDrumNotes.length,
+              firstNote: visibleNotes[0] ? {
+                drum: visibleNotes[0].drum,
+                time: visibleNotes[0].time.toFixed(2),
+                progress: visibleNotes[0].progress.toFixed(2)
+              } : null
+            })
+          }
+          
+          // Debug: Log gesture result occasionally
+          if (Math.random() < 0.02) {
+            console.log('🎮 Drum game loop debug:', {
+              hasGestureResult: !!gestureResult,
+              gestureEvent: gestureResult?.event,
+              autoPlay: autoPlayRef.current,
+              currentTime: drumGameEngineRef.current.getCurrentTime().toFixed(3),
+              visibleNotes: visibleNotes.length
+            })
+          }
+          
+          // Process user input if not in auto-play mode
+          if (!autoPlayRef.current && gestureDetectorRef.current && gestureResult && gestureResult.event) {
+            // Get current game time (in seconds, relative to game start)
+            const gameTime = drumGameEngineRef.current.getCurrentTime()
+            
+            console.log('Processing user input:', {
+              gestureEvent: gestureResult.event,
+              gameTime,
+              leftPos,
+              rightPos,
+              gameState: drumGameEngineRef.current.getState()
+            })
+            
+            const hit = drumGameEngineRef.current.onUserInput(
+              gestureResult.event,
+              leftPos,
+              rightPos,
+              gameTime
+            )
+            
+            if (hit) {
+              console.log('Drum hit detected:', hit)
+              // Flash effect
+              setCurrentHitDrumId(hit.drumId)
+              setTimeout(() => setCurrentHitDrumId(null), 200)
+              
+              // Update drum hits for visual feedback
+              if (hit.hand === 'left' || hit.hand === 'both') {
+                drumFlashRef.current.left = 1.0
+              }
+              if (hit.hand === 'right' || hit.hand === 'both') {
+                drumFlashRef.current.right = 1.0
+              }
+            }
+          }
+          
+          // Update drum flash decay (for visual feedback)
+          drumFlashRef.current.left = Math.max(0, drumFlashRef.current.left - 0.06)
+          drumFlashRef.current.right = Math.max(0, drumFlashRef.current.right - 0.06)
+          
+          setDrumHits({
+            left: drumFlashRef.current.left,
+            right: drumFlashRef.current.right
+          })
+        } else if (simpleDrumPlayerRef.current) {
+          // Simple drum mode: process hit
+          if (gestureResult?.event && videoRef.current) {
+            const { width: screenWidth, height: screenHeight } = getVideoDisplaySize()
             
             // Debug: Log hand positions occasionally
             if (Math.random() < 0.05) {
-              console.log('🔍 Hand positions:', {
+              console.log('Hand positions:', {
                 left: leftPos ? `(${leftPos.x.toFixed(2)}, ${leftPos.y.toFixed(2)})` : 'null',
                 right: rightPos ? `(${rightPos.x.toFixed(2)}, ${rightPos.y.toFixed(2)})` : 'null',
                 screenSize: `${screenWidth}x${screenHeight}`
@@ -497,7 +748,18 @@ export default function App() {
     }
     
     loop()
-  }, [scoreThreshold])
+  }, [scoreThreshold])  // Only scoreThreshold needed, others use refs
+
+  // Get video display size (actual rendered size, not video resolution)
+  const getVideoDisplaySize = useCallback(() => {
+    if (!videoRef.current) {
+      return { width: 640, height: 480 }
+    }
+    return {
+      width: videoRef.current.clientWidth || 640,
+      height: videoRef.current.clientHeight || 480
+    }
+  }, [])
 
   // Handle video ready
   const handleVideoReady = useCallback((video: HTMLVideoElement) => {
@@ -516,7 +778,13 @@ export default function App() {
 
   // Start inference
   const handleStart = useCallback(async () => {
-    console.log('🚀 handleStart called', { gameMode })
+    console.log('handleStart called', { 
+      gameMode, 
+      hasChart: !!currentChart,
+      isReadyToStart,
+      hasDrumGameEngine: !!drumGameEngineRef.current,
+      hasSimpleDrumPlayer: !!simpleDrumPlayerRef.current
+    })
     
     if (!videoRef.current || !detectorRef.current) {
       console.warn('Cannot start: video or detector not ready')
@@ -524,24 +792,101 @@ export default function App() {
     }
 
     if (gameMode === 'drum') {
-      // Drum mode: initialize drum player and start inference
-      try {
-        await initializeDrumPlayer()
-        setInferenceStatus('running')
-        isInferringRef.current = true
-        inferFpsRef.current.reset()
-        renderFpsRef.current.reset()
-        
-        // Reset gesture detector
-        if (gestureDetectorRef.current) {
-          gestureDetectorRef.current.reset()
+      // Check if we have a generated chart
+      if (currentChart) {
+        // Check if generation is complete
+        if (!isReadyToStart) {
+          alert('Please wait for chart generation to complete before starting.')
+          return
         }
-        
-        console.log('🥁 Starting drum mode inference...')
-        runDrumInference()
-      } catch (error) {
-        console.error('❌ Failed to start drum mode:', error)
-        alert('Failed to initialize drum player. Please check console for details.')
+        console.log('Chart mode: Initializing drum game engine...')
+        // Start DrumGameEngine with chart
+        try {
+          // Ensure drum game engine is initialized
+          if (!drumGameEngineRef.current) {
+            await initializeDrumGameEngine()
+          }
+          
+          if (!drumGameEngineRef.current) {
+            throw new Error('Failed to initialize DrumGameEngine')
+          }
+          
+          // Ensure chart is set (in case it wasn't set during generation)
+          if (!drumGameEngineRef.current.getChart()) {
+            drumGameEngineRef.current.setChart(currentChart)
+            drumGameEngineRef.current.setAutoPlay(autoPlay)
+          }
+          
+          // Ensure audio context is resumed (required for autoplay policy)
+          if (audioManagerRef.current?.isInitialized) {
+            const audioContext = (audioManagerRef.current as any).context
+            if (audioContext && audioContext.state === 'suspended') {
+              await audioContext.resume()
+              console.log('Audio context resumed')
+            }
+          }
+          
+          // Start drum game engine first
+          console.log('Starting drum game engine...')
+          drumGameEngineRef.current.start()
+          
+          // Get the audio context start time for synchronization
+          const audioContext = (audioManagerRef.current as any).context
+          const gameStartTime = audioContext ? audioContext.currentTime : 0
+          
+          // Start accompaniment if enabled and patterns are loaded (after drum game starts)
+          if (accompanimentEnabled && accompanimentPlayerRef.current) {
+            // Start patterns immediately (startTime = 0 means start at currentTime)
+            const startTime = 0
+            console.log('Starting accompaniment at audio context time:', gameStartTime)
+            // Only start patterns that have been loaded
+            if (accompanimentPatterns.has('bass')) {
+              console.log('Starting bass accompaniment...')
+              accompanimentPlayerRef.current.startPattern('bass', startTime)
+            }
+            if (accompanimentPatterns.has('piano')) {
+              console.log('Starting piano accompaniment...')
+              accompanimentPlayerRef.current.startPattern('piano', startTime)
+            }
+          }
+          
+          setInferenceStatus('running')
+          isInferringRef.current = true
+          inferFpsRef.current.reset()
+          renderFpsRef.current.reset()
+          
+          // Reset gesture detector
+          if (gestureDetectorRef.current) {
+            gestureDetectorRef.current.reset()
+          }
+          
+          console.log('Starting drum game engine with chart - inference loop starting')
+          runDrumInference()
+        } catch (error) {
+          console.error('Failed to start drum game engine:', error)
+          alert('Failed to start drum game. Please check console for details.')
+        }
+      } else {
+        // Simple drum mode: initialize drum player and start inference
+        console.log('Simple drum mode: Initializing drum player...')
+        try {
+          await initializeDrumPlayer()
+          setInferenceStatus('running')
+          isInferringRef.current = true
+          inferFpsRef.current.reset()
+          renderFpsRef.current.reset()
+          
+          // Reset gesture detector
+          if (gestureDetectorRef.current) {
+            gestureDetectorRef.current.reset()
+          }
+          
+          console.log('Starting simple drum mode inference...')
+          runDrumInference()
+        } catch (error) {
+          console.error('Failed to start drum mode:', error)
+          alert('Failed to initialize drum player. Please check console for details.')
+        }
       }
     } else {
       // Rhythm game mode
@@ -557,7 +902,18 @@ export default function App() {
       // If song is selected, start the rhythm game
       await startRhythmGame()
     }
-  }, [gameMode, initializeAudio, initializeDrumPlayer, runDrumInference, selectedSong, startRhythmGame])
+  }, [
+    gameMode,
+    initializeAudio,
+    initializeDrumPlayer,
+    initializeDrumGameEngine,
+    runDrumInference,
+    selectedSong,
+    startRhythmGame,
+    currentChart,
+    accompanimentEnabled,
+    isReadyToStart
+  ])
 
   // Stop inference
   const handleStop = useCallback(() => {
@@ -575,6 +931,17 @@ export default function App() {
       rhythmEngineRef.current.dispose()
       rhythmEngineRef.current = null
       console.log('Rhythm game stopped')
+    }
+    
+    // Stop drum game engine if running
+    if (drumGameEngineRef.current) {
+      drumGameEngineRef.current.stop()
+      console.log('Drum game engine stopped')
+    }
+    
+    // Stop accompaniment
+    if (accompanimentPlayerRef.current) {
+      accompanimentPlayerRef.current.stopAll()
     }
     
     // Reset drum player
@@ -654,36 +1021,63 @@ export default function App() {
             />
             
             {/* Note Track (Rhythm Mode) */}
-            {gameMode === 'rhythm' && inferenceStatus === 'running' && videoRef.current && (
-              <NoteTrack
-                visibleNotes={visibleNotes}
-                videoWidth={videoRef.current.videoWidth || 640}
-                videoHeight={videoRef.current.videoHeight || 480}
-              />
-            )}
+            {gameMode === 'rhythm' && inferenceStatus === 'running' && videoRef.current && (() => {
+              const { width, height } = getVideoDisplaySize()
+              return (
+                <NoteTrack
+                  visibleNotes={visibleNotes}
+                  videoWidth={width}
+                  videoHeight={height}
+                />
+              )
+            })()}
             
             {/* Drum Pad Display (Drum Mode) */}
-            {gameMode === 'drum' && inferenceStatus === 'running' && videoRef.current && drumPads.length > 0 && (
-              <>
-                <DrumPadDisplay
-                  pads={drumPads}
-                  videoWidth={videoRef.current.videoWidth || 640}
-                  videoHeight={videoRef.current.videoHeight || 480}
-                  hitDrumId={currentHitDrumId}
-                />
-                {/* Hand Position Debug */}
-                {showHandDebug && (
-                  <HandPositionDebug
-                    leftHandPos={leftHandDebugPos}
-                    rightHandPos={rightHandDebugPos}
-                    videoWidth={videoRef.current.videoWidth || 640}
-                    videoHeight={videoRef.current.videoHeight || 480}
-                    enabled={showHandDebug}
-                    mirrorX={mirrorX}
-                  />
-                )}
-              </>
-            )}
+            {gameMode === 'drum' && inferenceStatus === 'running' && videoRef.current && (() => {
+              const { width, height } = getVideoDisplaySize()
+              return (
+                <>
+                  {drumPads.length > 0 && (
+                    <DrumPadDisplay
+                      pads={drumPads}
+                      videoWidth={width}
+                      videoHeight={height}
+                      hitDrumId={currentHitDrumId}
+                    />
+                  )}
+                  {/* Drum Chart Guide - shows falling notes */}
+                  {currentChart && drumGameEngineRef.current && drumPads.length > 0 ? (
+                    <DrumChartGuide
+                      notes={visibleDrumNotes}
+                      pads={drumPads}
+                      videoWidth={width}
+                      videoHeight={height}
+                    />
+                  ) : (
+                    // Debug: Log why DrumChartGuide is not rendering
+                    <div style={{ display: 'none' }}>
+                      {console.log('❌ DrumChartGuide not rendering:', {
+                        hasChart: !!currentChart,
+                        hasEngine: !!drumGameEngineRef.current,
+                        padsCount: drumPads.length,
+                        inferenceStatus
+                      })}
+                    </div>
+                  )}
+                  {/* Hand Position Debug */}
+                  {showHandDebug && (
+                    <HandPositionDebug
+                      leftHandPos={leftHandDebugPos}
+                      rightHandPos={rightHandDebugPos}
+                      videoWidth={width}
+                      videoHeight={height}
+                      enabled={showHandDebug}
+                      mirrorX={mirrorX}
+                    />
+                  )}
+                </>
+              )
+            })()}
             
             {/* Mode Indicator */}
             {cameraStatus === 'capturing' && inferenceStatus !== 'running' && (
@@ -771,6 +1165,131 @@ export default function App() {
         </div>
 
         <div className="control-section">
+          {/* Chart Generator Panel (Drum Mode Only) */}
+          {gameMode === 'drum' && cameraStatus === 'capturing' && inferenceStatus !== 'running' && (
+            <ChartGeneratorPanel
+              onChartGenerated={handleChartGenerated}
+              isGenerating={isGeneratingChart}
+              onGeneratingChange={setIsGeneratingChart}
+              generationProgress={generationProgress}
+              isReadyToStart={isReadyToStart}
+            />
+          )}
+          
+          {/* Chart Controls & Debug (Drum Mode Only) */}
+          {gameMode === 'drum' && currentChart && (
+            <>
+              <div style={{
+                padding: '16px',
+                border: '1px solid #ddd',
+                borderRadius: '8px',
+                backgroundColor: '#f9f9f9',
+                marginBottom: '16px'
+              }}>
+                <h4 style={{ marginTop: 0, marginBottom: '12px' }}>Chart Controls</h4>
+                <div style={{ marginBottom: '12px' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={autoPlay}
+                      onChange={(e) => {
+                        const newValue = e.target.checked
+                        setAutoPlay(newValue)
+                        autoPlayRef.current = newValue  // Sync ref
+                        if (drumGameEngineRef.current) {
+                          drumGameEngineRef.current.setAutoPlay(newValue)
+                        }
+                      }}
+                    />
+                    <span>Auto-Play Mode</span>
+                  </label>
+                </div>
+                <div style={{ marginBottom: '12px' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={accompanimentEnabled}
+                      onChange={(e) => setAccompanimentEnabled(e.target.checked)}
+                    />
+                    <span>Enable Accompaniment</span>
+                  </label>
+                </div>
+                {accompanimentEnabled && (
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '4px' }}>
+                      Accompaniment Volume: {(accompanimentVolume * 100).toFixed(0)}%
+                    </label>
+                    <input
+                      type="range"
+                      min="0"
+                      max="1"
+                      step="0.01"
+                      value={accompanimentVolume}
+                      onChange={(e) => {
+                        const vol = parseFloat(e.target.value)
+                        setAccompanimentVolume(vol)
+                        if (accompanimentPlayerRef.current) {
+                          accompanimentPlayerRef.current.setVolume(vol)
+                        }
+                      }}
+                      style={{ width: '100%' }}
+                    />
+                  </div>
+                )}
+                <div style={{ marginTop: '12px', fontSize: '14px', color: '#666' }}>
+                  Chart: {currentChart.theme} ({currentChart.difficulty}) - {currentChart.notes.length} notes
+                </div>
+              </div>
+
+              {/* Chart Debug Panel (collapsible) */}
+              {chartDebugText && (
+                <div style={{
+                  padding: '12px 16px',
+                  border: '1px solid #ddd',
+                  borderRadius: '8px',
+                  backgroundColor: '#f5f5f5',
+                  marginBottom: '16px'
+                }}>
+                  <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    marginBottom: '8px'
+                  }}>
+                    <h4 style={{ margin: 0, fontSize: '14px' }}>Chart Debug (Raw JSON)</h4>
+                    <button
+                      onClick={() => setShowChartDebug(prev => !prev)}
+                      style={{
+                        padding: '4px 8px',
+                        fontSize: '12px',
+                        borderRadius: '4px',
+                        border: '1px solid #ccc',
+                        backgroundColor: '#fff',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {showChartDebug ? 'Hide' : 'Show'}
+                    </button>
+                  </div>
+                  {showChartDebug && (
+                    <pre style={{
+                      maxHeight: '200px',
+                      overflow: 'auto',
+                      backgroundColor: '#1e1e1e',
+                      color: '#dcdcdc',
+                      padding: '8px',
+                      borderRadius: '4px',
+                      fontSize: '11px',
+                      margin: 0
+                    }}>
+{chartDebugText}
+                    </pre>
+                  )}
+                </div>
+              )}
+            </>
+          )}
+          
           {/* Select Song Button (Rhythm Mode Only) */}
           {gameMode === 'rhythm' && cameraStatus === 'capturing' && inferenceStatus !== 'running' && !showSongSelector && (
             <div style={{ marginBottom: '20px' }}>
@@ -879,6 +1398,8 @@ export default function App() {
             fps={fps}
             keypointCount={keypoints.length}
             tfBackend={tfBackend}
+            disableStart={gameMode === 'drum' && currentChart && !isReadyToStart}
+            disableStartReason={gameMode === 'drum' && currentChart && !isReadyToStart ? 'Waiting for chart generation to complete...' : undefined}
             inferenceTime={inferenceTime}
           />
         </div>

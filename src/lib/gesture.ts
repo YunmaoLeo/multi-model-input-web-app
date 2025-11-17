@@ -47,8 +47,8 @@ export class GestureDetector {
   constructor(config: Partial<GestureConfig> = {}) {
     this.config = {
       speedThreshold: 0.00015,          // Not used for stroke-based detection
-      displacementThreshold: 0.08,      // Stroke distance threshold (normalized coords, ~8% of screen)
-      strokeTimeoutMs: 500,             // Stroke must complete within 500ms (like a real drum hit)
+      displacementThreshold: 0.03,      // Stroke distance threshold (normalized coords, ~3% of screen height)
+      strokeTimeoutMs: 800,             // Stroke must complete within 800ms (more forgiving)
       dualHitWindowMs: 120,             // Slightly wider window for dual hits
       deadTimeMs: 150,                  // Debounce time between hits
       medianFilterSize: 5,              // Increased for better noise filtering

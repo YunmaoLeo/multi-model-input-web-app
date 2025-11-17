@@ -15,6 +15,9 @@ interface ControlPanelProps {
   keypointCount: number
   tfBackend: string
   inferenceTime: number
+  // Optional: disable start button (e.g., when generation not complete)
+  disableStart?: boolean
+  disableStartReason?: string
 }
 
 export default function ControlPanel({
@@ -30,7 +33,9 @@ export default function ControlPanel({
   fps,
   keypointCount,
   tfBackend,
-  inferenceTime
+  inferenceTime,
+  disableStart = false,
+  disableStartReason
 }: ControlPanelProps) {
   
   const getStatusColor = (status: CameraStatus | InferenceStatus): string => {
@@ -56,10 +61,29 @@ export default function ControlPanel({
       <div className="control-group">
         <button
           onClick={isRunning ? onStop : onStart}
-          className={`control-btn ${isRunning ? 'stop' : 'start'} ${isRunning ? 'pulse-active' : ''}`}
+          disabled={!isRunning && disableStart}
+          className={`control-btn ${isRunning ? 'stop' : 'start'} ${isRunning ? 'pulse-active' : ''} ${!isRunning && disableStart ? 'disabled' : ''}`}
+          title={!isRunning && disableStart ? disableStartReason : undefined}
+          style={{
+            opacity: !isRunning && disableStart ? 0.5 : 1,
+            cursor: !isRunning && disableStart ? 'not-allowed' : 'pointer'
+          }}
         >
           {isRunning ? 'Stop Inference' : 'Start Inference'}
         </button>
+        {!isRunning && disableStart && disableStartReason && (
+          <div style={{
+            marginTop: '8px',
+            padding: '6px 10px',
+            backgroundColor: '#fff3cd',
+            border: '1px solid #ffc107',
+            borderRadius: '4px',
+            fontSize: '12px',
+            color: '#856404'
+          }}>
+            {disableStartReason}
+          </div>
+        )}
       </div>
 
       {/* 模型选择 */}

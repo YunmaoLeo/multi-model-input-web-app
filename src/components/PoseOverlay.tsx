@@ -117,7 +117,8 @@ export default function PoseOverlay({ videoElement, keypoints, isVisible, drumHi
         if (!upperBodyIndices.includes(index)) return
         
         if (keypoint.score > confidenceThreshold) {
-          const x = keypoint.x * canvas.width
+          // 镜像 x 坐标以匹配骨骼连接和视频
+          const x = canvas.width - (keypoint.x * canvas.width)
           const y = keypoint.y * canvas.height
 
           // 根据关键点类型确定大小和颜色

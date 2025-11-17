@@ -74,6 +74,10 @@ export class DrumAudioPlayer {
     }
 
     try {
+      console.log('🔊 DrumAudioPlayer.playDrum', {
+        drumId,
+        velocity: velocity.toFixed(3)
+      })
       const source = this.audioContext.createBufferSource()
       source.buffer = buffer
 

@@ -3,10 +3,11 @@
  * Uses OpenAI API to generate drum charts based on themes
  */
 
+import { getOpenAIApiKey } from '@/lib/openai/config'
 import type { DrumChart, DrumChartNote } from '@/types/drum'
 
 interface LLMConfig {
-  apiKey: string
+  apiKey?: string
   model?: string
   baseURL?: string
 }
@@ -14,14 +15,16 @@ interface LLMConfig {
 export class LLMChartGenerator {
   private config: LLMConfig
 
-  constructor(config: LLMConfig) {
+  constructor(config?: LLMConfig) {
+    const apiKey = config?.apiKey || getOpenAIApiKey()
     this.config = {
+      apiKey,
       model: 'gpt-4o-mini',  // Use cheaper model for chart generation
       ...config
     }
     
     if (!this.config.apiKey) {
-      console.warn('⚠️ OpenAI API key not provided. LLM chart generation will not work.')
+      console.warn('OpenAI API key not provided. LLM chart generation will not work.')
     }
   }
 
@@ -171,12 +174,60 @@ Generate a ${theme} style drum chart with ${params.noteDensity}, suitable for ${
       throw new Error('Invalid chart format: missing notes array')
     }
 
+    // Helper: normalize drum name to known IDs used by DrumPadManager / DrumAudioPlayer
+    const normalizeDrumId = (raw: any): string => {
+      const value = String(raw || '').trim().toLowerCase()
+      
+      // Common aliases mapping
+      const mapping: Record<string, string> = {
+        // Kick
+        'kick': 'kick',
+        'kick drum': 'kick',
+        'bass': 'kick',
+        'bass drum': 'kick',
+        // Snare
+        'snare': 'snare',
+        'snare drum': 'snare',
+        // Hi-hat
+        'hihat': 'hihat',
+        'hi-hat': 'hihat',
+        'hi hat': 'hihat',
+        // Crash
+        'crash': 'crash',
+        'crash cymbal': 'crash',
+        // Ride
+        'ride': 'ride',
+        'ride cymbal': 'ride',
+        // Tom
+        'tom': 'tom',
+        'tom1': 'tom',
+        'tom2': 'tom',
+        'floor tom': 'tom'
+      }
+
+      if (mapping[value]) {
+        return mapping[value]
+      }
+
+      // If LLM outputs something like "kick (bass drum)" try partial matching
+      if (value.includes('kick') || value.includes('bass')) return 'kick'
+      if (value.includes('snare')) return 'snare'
+      if (value.includes('hat')) return 'hihat'
+      if (value.includes('crash')) return 'crash'
+      if (value.includes('ride')) return 'ride'
+      if (value.includes('tom')) return 'tom'
+
+      // Fallback: use kick to avoid silent notes
+      console.warn('Unknown drum id from LLM, falling back to kick:', raw)
+      return 'kick'
+    }
+
     // Normalize notes
     const notes: DrumChartNote[] = data.notes
       .filter((note: any) => note.time != null && note.drum && note.hand)
       .map((note: any) => ({
         time: Math.max(0, Math.min(duration, parseFloat(note.time) || 0)),
-        drum: String(note.drum),
+        drum: normalizeDrumId(note.drum),
         hand: note.hand as 'left' | 'right' | 'both',
         hint: note.hint || undefined,
         velocity: note.velocity ? Math.max(0, Math.min(1, parseFloat(note.velocity))) : undefined
